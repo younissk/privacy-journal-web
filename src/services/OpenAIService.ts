@@ -3,8 +3,35 @@ import CryptoJS from "crypto-js";
 import { auth } from "../firebase";
 
 /**
+ * Custom error classes for better error handling
+ */
+class OpenAIServiceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAIServiceError";
+  }
+}
+
+class DatabaseError extends OpenAIServiceError {
+  constructor(message: string) {
+    super(message);
+    this.name = "DatabaseError";
+  }
+}
+
+class EncryptionError extends OpenAIServiceError {
+  constructor(message: string) {
+    super(message);
+    this.name = "EncryptionError";
+  }
+}
+
+/**
  * A service for interacting with the OpenAI API.
  * Securely stores API keys in IndexedDB with encryption.
+ *
+ * Environment Variables Required:
+ * - VITE_ENCRYPTION_SALT: A secure random string used for encryption
  */
 class OpenAIService {
   private static instance: OpenAIService;
@@ -13,7 +40,8 @@ class OpenAIService {
   private readonly DB_NAME = "privacy-journal-openai-db";
   private readonly STORE_NAME = "api-keys";
   private readonly API_KEY_ID = "openai-api-key";
-  private readonly SALT = "privacy-journal-salt"; // This would ideally be stored securely
+  private readonly SALT =
+    import.meta.env.VITE_ENCRYPTION_SALT || "default-salt-for-development";
 
   private constructor() {
     this.initializeDB();
@@ -31,6 +59,7 @@ class OpenAIService {
 
   /**
    * Initialize the IndexedDB database
+   * @throws {DatabaseError} If database initialization fails
    */
   private initializeDB(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -38,7 +67,7 @@ class OpenAIService {
 
       request.onerror = (event) => {
         console.error("IndexedDB error:", event);
-        reject(new Error("Failed to open database"));
+        reject(new DatabaseError("Failed to open database"));
       };
 
       request.onsuccess = (event) => {
@@ -59,32 +88,61 @@ class OpenAIService {
 
   /**
    * Get the user-specific encryption key
+   * @returns {string} The user-specific encryption key
    */
   private getUserSecret(): string {
     const user = auth.currentUser;
-    // Use user ID as part of the encryption key, with a fallback
     return user ? `${user.uid}-${this.SALT}` : `anonymous-${this.SALT}`;
   }
 
   /**
    * Encrypt the API key
+   * @param {string} apiKey - The API key to encrypt
+   * @returns {string} The encrypted API key
+   * @throws {EncryptionError} If encryption fails
    */
   private encryptApiKey(apiKey: string): string {
-    const userSecret = this.getUserSecret();
-    return CryptoJS.AES.encrypt(apiKey, userSecret).toString();
+    try {
+      const userSecret = this.getUserSecret();
+      return CryptoJS.AES.encrypt(apiKey, userSecret).toString();
+    } catch (error) {
+      throw new EncryptionError(
+        `Failed to encrypt API key: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
   }
 
   /**
    * Decrypt the API key
+   * @param {string} encryptedKey - The encrypted API key
+   * @returns {string} The decrypted API key
+   * @throws {EncryptionError} If decryption fails
    */
   private decryptApiKey(encryptedKey: string): string {
-    const userSecret = this.getUserSecret();
-    const bytes = CryptoJS.AES.decrypt(encryptedKey, userSecret);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    try {
+      const userSecret = this.getUserSecret();
+      const bytes = CryptoJS.AES.decrypt(encryptedKey, userSecret);
+      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+      if (!decrypted) {
+        throw new Error("Decryption resulted in empty string");
+      }
+      return decrypted;
+    } catch (error) {
+      throw new EncryptionError(
+        `Failed to decrypt API key: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
   }
 
   /**
    * Save the API key to IndexedDB
+   * @param {string} apiKey - The API key to save
+   * @throws {DatabaseError} If saving fails
+   * @throws {EncryptionError} If encryption fails
    */
   public async setApiKey(apiKey: string): Promise<void> {
     if (!this.db) {
@@ -92,7 +150,7 @@ class OpenAIService {
     }
 
     if (!this.db) {
-      throw new Error("Database not initialized");
+      throw new DatabaseError("Database not initialized");
     }
 
     return new Promise((resolve, reject) => {
@@ -118,17 +176,29 @@ class OpenAIService {
 
         request.onerror = (event) => {
           console.error("Error storing API key:", event);
-          reject(new Error("Failed to store API key"));
+          reject(new DatabaseError("Failed to store API key"));
         };
       } catch (error) {
-        console.error("Error encrypting and storing API key:", error);
-        reject(error);
+        if (error instanceof OpenAIServiceError) {
+          reject(error);
+        } else {
+          reject(
+            new DatabaseError(
+              `Failed to store API key: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`
+            )
+          );
+        }
       }
     });
   }
 
   /**
    * Get the API key from IndexedDB
+   * @returns {Promise<string | null>} The decrypted API key or null if not found
+   * @throws {DatabaseError} If retrieval fails
+   * @throws {EncryptionError} If decryption fails
    */
   public async getApiKey(): Promise<string | null> {
     if (!this.db) {
@@ -166,13 +236,14 @@ class OpenAIService {
 
       request.onerror = (event) => {
         console.error("Error retrieving API key:", event);
-        reject(new Error("Failed to retrieve API key"));
+        reject(new DatabaseError("Failed to retrieve API key"));
       };
     });
   }
 
   /**
    * Initialize OpenAI client with API key
+   * @param {string} apiKey - The API key to initialize with
    */
   private initializeOpenAI(apiKey: string): void {
     this.openai = new OpenAI({
@@ -183,6 +254,7 @@ class OpenAIService {
 
   /**
    * Ensure the OpenAI client is initialized
+   * @returns {Promise<boolean>} Whether initialization was successful
    */
   private async ensureOpenAIInitialized(): Promise<boolean> {
     if (!this.openai) {
@@ -198,12 +270,15 @@ class OpenAIService {
 
   /**
    * Transcribe audio using OpenAI Whisper API
+   * @param {Blob} audioBlob - The audio blob to transcribe
+   * @returns {Promise<string>} The transcribed text
+   * @throws {OpenAIServiceError} If transcription fails
    */
   public async transcribeAudio(audioBlob: Blob): Promise<string> {
     const isInitialized = await this.ensureOpenAIInitialized();
 
     if (!isInitialized || !this.openai) {
-      throw new Error(
+      throw new OpenAIServiceError(
         "OpenAI API key not set. Please add your API key in settings."
       );
     }
@@ -228,7 +303,7 @@ class OpenAIService {
         const errorData = await response
           .json()
           .catch(() => ({ error: response.statusText }));
-        throw new Error(
+        throw new OpenAIServiceError(
           `OpenAI API error: ${errorData.error || response.statusText}`
         );
       }
@@ -236,18 +311,25 @@ class OpenAIService {
       const data = await response.json();
       return data.text;
     } catch (error) {
-      console.error("Error transcribing audio:", error);
-      throw error;
+      if (error instanceof OpenAIServiceError) {
+        throw error;
+      }
+      throw new OpenAIServiceError(
+        `Error transcribing audio: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
   /**
    * Check if the API key is valid
+   * @param {string} apiKey - The API key to test
+   * @returns {Promise<boolean>} Whether the API key is valid
    */
   public async testApiKey(apiKey: string): Promise<boolean> {
     try {
       const formData = new FormData();
-      // Create a small test audio file (1px transparent PNG as placeholder)
       const base64Data =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
       const blob = await (
@@ -268,8 +350,6 @@ class OpenAIService {
         }
       );
 
-      // If we get a 400 error, it means the API key is valid but the file format is wrong
-      // If we get a 401 error, it means the API key is invalid
       return response.status !== 401;
     } catch (error) {
       console.error("Error testing API key:", error);
@@ -279,6 +359,7 @@ class OpenAIService {
 
   /**
    * Clear the API key from IndexedDB
+   * @throws {DatabaseError} If clearing fails
    */
   public async clearApiKey(): Promise<void> {
     if (!this.db) {
@@ -297,7 +378,7 @@ class OpenAIService {
 
       request.onerror = (event) => {
         console.error("Error clearing API key:", event);
-        reject(new Error("Failed to clear API key"));
+        reject(new DatabaseError("Failed to clear API key"));
       };
     });
   }

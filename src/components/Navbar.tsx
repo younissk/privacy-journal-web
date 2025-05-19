@@ -15,7 +15,7 @@ import {
   Show,
   Hide,
 } from "@chakra-ui/react";
-import { MoonIcon, SunIcon, HamburgerIcon, SettingsIcon } from "@chakra-ui/icons";
+import { MoonIcon, SunIcon, HamburgerIcon } from "@chakra-ui/icons";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Navbar() {
