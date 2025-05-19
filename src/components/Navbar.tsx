@@ -15,7 +15,7 @@ import {
   Show,
   Hide,
 } from "@chakra-ui/react";
-import { MoonIcon, SunIcon, HamburgerIcon } from "@chakra-ui/icons";
+import { MoonIcon, SunIcon, HamburgerIcon, SettingsIcon } from "@chakra-ui/icons";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Navbar() {
@@ -78,6 +78,9 @@ export default function Navbar() {
                 <Button variant="ghost" onClick={() => navigate("/dashboard")}>
                   Dashboard
                 </Button>
+                <Button variant="ghost" onClick={() => navigate("/settings")}>
+                  Settings
+                </Button>
                 <Button variant="logout" onClick={handleLogout}>
                   Logout
                 </Button>
@@ -96,6 +99,9 @@ export default function Navbar() {
                     </MenuItem>
                     <MenuItem onClick={() => navigate("/dashboard")}>
                       Dashboard
+                    </MenuItem>
+                    <MenuItem onClick={() => navigate("/settings")}>
+                      Settings
                     </MenuItem>
                     <MenuItem onClick={handleLogout} color="red.500">
                       Logout

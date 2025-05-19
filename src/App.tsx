@@ -1,9 +1,10 @@
 import { Box } from "@chakra-ui/react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import JournalList from "./components/JournalList";
 import JournalEditor from "./components/JournalEditor";
+import Settings from "./components/Settings";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
 
@@ -20,6 +21,7 @@ function AppContent() {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/journals" element={<ProtectedRoute><JournalList /></ProtectedRoute>} />
         <Route path="/journal/:id" element={<ProtectedRoute><JournalEditor /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       </Routes>
     </Box>
   );
@@ -37,9 +39,13 @@ function App() {
 
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { githubAccessToken } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  if (!githubAccessToken) {
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!currentUser) {
     return <Login />;
   }
 

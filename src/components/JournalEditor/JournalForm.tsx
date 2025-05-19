@@ -1,4 +1,5 @@
-import { Box, Input, Textarea, Text, useColorModeValue } from "@chakra-ui/react";
+import { Box, Input, Textarea, Text, useColorModeValue, VStack } from "@chakra-ui/react";
+import VoiceRecorder from "../VoiceRecorder";
 
 interface JournalFormProps {
   title: string;
@@ -17,6 +18,11 @@ export function JournalForm({
 }: JournalFormProps) {
   const placeholderColor = useColorModeValue("gray.400", "gray.500");
   const subtleColor = useColorModeValue("gray.500", "gray.400");
+
+  const handleTranscription = (text: string) => {
+    // Append the transcribed text to the current content
+    onContentChange(content ? `${content}\n\n${text}` : text);
+  };
 
   return (
     <Box
@@ -41,6 +47,10 @@ export function JournalForm({
         spellCheck={true}
       />
 
+      <VStack spacing={4} align="stretch" mb={4}>
+        <VoiceRecorder onTranscriptionComplete={handleTranscription} />
+      </VStack>
+
       <Textarea
         value={content}
         onChange={(e) => onContentChange(e.target.value)}
@@ -50,7 +60,7 @@ export function JournalForm({
         lineHeight="tall"
         resize="none"
         p={0}
-        height="calc(100vh - 180px)"
+        height="calc(100vh - 250px)"
         _focus={{ boxShadow: "none" }}
         _placeholder={{ color: placeholderColor }}
         spellCheck={true}
