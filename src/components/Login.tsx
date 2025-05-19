@@ -73,6 +73,16 @@ export default function Login() {
         <VStack spacing={6}>
           <Heading size="lg">Welcome to Privacy Journal</Heading>
 
+          <Alert status="info" borderRadius="md">
+            <AlertIcon />
+            <AlertTitle>Open Source & Secure</AlertTitle>
+            <AlertDescription>
+              This application is open source and you can review the code on
+              GitHub. We do not store any API keys on our servers - they are
+              encrypted and stored locally in your browser.
+            </AlertDescription>
+          </Alert>
+
           {error && (
             <Alert status="error" borderRadius="md">
               <AlertIcon />

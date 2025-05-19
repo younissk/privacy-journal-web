@@ -78,6 +78,7 @@ export default function APIKeySettings() {
         duration: 3000,
         isClosable: true,
       });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error: unknown) {
       toast({
         title: 'Error',
@@ -105,6 +106,7 @@ export default function APIKeySettings() {
         duration: 3000,
         isClosable: true,
       });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error: unknown) {
       toast({
         title: 'Error',
@@ -132,6 +134,7 @@ export default function APIKeySettings() {
         duration: 3000,
         isClosable: true,
       });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error: unknown) {
       setIsKeyValid(false);
       toast({
