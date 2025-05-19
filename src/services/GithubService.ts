@@ -33,7 +33,6 @@ class GithubService {
       /[^a-zA-Z0-9-]/g,
       "-"
     )}`;
-    console.log(`Using repository name: ${this.repoName}`);
 
     // Verify GitHub access right away and then directly check repo
     this.verifyGitHubAccess().then((success) => {
@@ -55,7 +54,6 @@ class GithubService {
 
       // Test API access by getting the authenticated user
       const { data: user } = await this.octokit.rest.users.getAuthenticated();
-      console.log(`Verified GitHub access for user: ${user.login}`);
 
       // Update username if it's different from what was provided
       if (user.login !== this.username) {
@@ -89,9 +87,6 @@ class GithubService {
     try {
       // List the user's repos first to find if our repo exists
       try {
-        console.log(
-          `Looking for repository ${this.repoName} under user ${this.username}`
-        );
         const { data: repos } =
           await this.octokit.rest.repos.listForAuthenticatedUser({
             per_page: 100,
@@ -100,9 +95,6 @@ class GithubService {
         const existingRepo = repos.find((repo) => repo.name === this.repoName);
 
         if (existingRepo) {
-          console.log(
-            `Found repository ${this.repoName} under owner ${existingRepo.owner.login}`
-          );
           return true;
         }
       } catch (listError) {
@@ -115,7 +107,6 @@ class GithubService {
           owner: this.username,
           repo: this.repoName,
         });
-        console.log("Repository exists and is accessible:", this.repoName);
         return true;
       } catch (getError) {
         // If 404, we'll try to create it below
@@ -141,10 +132,6 @@ class GithubService {
           );
 
           if (repoExistsError) {
-            console.log(
-              "Repository exists but may be in a different organization or inaccessible"
-            );
-
             // Try creating with a timestamp-based unique name
             const timestamp = new Date().getTime();
             this.repoName = `privacy-journal-entries-${this.username.replace(
@@ -257,9 +244,6 @@ class GithubService {
     }
 
     try {
-      console.log(
-        `Creating entry in repository ${this.repoName} owned by ${this.username}`
-      );
       const fileName = `${id}.md`;
       const frontMatter = `---
 title: ${title}
@@ -280,8 +264,6 @@ ${content}`;
       return newEntry;
     } catch (error) {
       console.error("Error creating journal entry:", error);
-      // Fall back to local storage
-      console.log("Falling back to local storage due to GitHub error");
       const entries = this.getLocalJournalEntries();
       entries.push(newEntry);
       this.saveLocalJournalEntries(entries);

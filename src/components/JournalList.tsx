@@ -59,7 +59,6 @@ export default function JournalList() {
       console.log(`Got ${journalEntries.length} journal entries from service`);
       setEntries(journalEntries);
     } catch (error) {
-      console.error("Error loading journal entries:", error);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
