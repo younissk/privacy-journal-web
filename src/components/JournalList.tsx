@@ -3,6 +3,28 @@ import { useAuth } from "../contexts/AuthContext";
 import { githubService } from "../services/GithubService";
 import type { JournalEntry } from "../services/GithubService";
 import { useNavigate } from "react-router-dom";
+import {
+  Box,
+  Button,
+  Container,
+  Heading,
+  Text,
+  VStack,
+  HStack,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  SimpleGrid,
+  Card,
+  CardHeader,
+  CardBody,
+  CardFooter,
+  useColorModeValue,
+  Spinner,
+  Center,
+  Divider,
+} from "@chakra-ui/react";
 
 export default function JournalList() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -12,6 +34,10 @@ export default function JournalList() {
   const [refreshing, setRefreshing] = useState(false);
   const { githubAccessToken, githubUsername, currentUser } = useAuth();
   const navigate = useNavigate();
+
+  const bgColor = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
+  const cardBgColor = useColorModeValue("white", "gray.700");
 
   async function loadEntries() {
     if (!githubAccessToken || !githubUsername) {
@@ -28,10 +54,7 @@ export default function JournalList() {
       setLoading(true);
       setError("");
 
-      // Initialize service if needed
       githubService.initialize(githubAccessToken, githubUsername);
-
-      // Load all entries
       const journalEntries = await githubService.getAllJournalEntries();
       console.log(`Got ${journalEntries.length} journal entries from service`);
       setEntries(journalEntries);
@@ -40,13 +63,11 @@ export default function JournalList() {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      // Handle specific error cases
       if (errorMessage.includes("Not Found")) {
         setError(
           "Repository not found. Please try creating a new journal entry or use the retry button below."
         );
       } else if (errorMessage.includes("already exists")) {
-        // If repository exists but we can't access it, suggest a fix
         setError(
           "Repository exists but cannot be accessed. Click 'Retry with New Repository' to create a new one."
         );
@@ -69,12 +90,10 @@ export default function JournalList() {
       setRetrying(true);
       setError("Creating a new repository with a unique name...");
 
-      // Use the special retry method that creates a guaranteed unique repo
       const success = await githubService.retryGitHubConnection();
 
       if (success) {
         setError("");
-        // Load entries from the new repository
         const journalEntries = await githubService.getAllJournalEntries();
         setEntries(journalEntries);
       } else {
@@ -112,98 +131,143 @@ export default function JournalList() {
   }
 
   if (loading) {
-    return <div className="loading">Loading journals...</div>;
+    return (
+      <Center h="50vh">
+        <Spinner size="xl" />
+      </Center>
+    );
   }
 
   return (
-    <div className="journal-list-container">
-      <h2>Your Journal Entries</h2>
+    <Container maxW="container.xl" py={8}>
+      <VStack spacing={6} align="stretch">
+        <Heading size="lg">Your Journal Entries</Heading>
 
-      {error && (
-        <div className="error-container">
-          <div className="error-message">{error}</div>
-          <div className="error-actions">
-            <button
-              onClick={handleRetryWithUniqueRepo}
-              disabled={retrying || refreshing}
-              className="retry-button"
-            >
-              {retrying
-                ? "Creating New Repository..."
-                : "Retry with New Repository"}
-            </button>
-            <button
-              onClick={loadEntries}
-              disabled={loading || retrying || refreshing}
-              className="retry-button"
-            >
-              Retry Current Repository
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="auth-info">
-        <p>Current user: {currentUser?.email || "Not logged in"}</p>
-        <p>GitHub username: {githubUsername || "Not set"}</p>
-        <p>GitHub token: {githubAccessToken ? "Present" : "Missing"}</p>
-      </div>
-
-      <div className="journal-actions">
-        <button onClick={handleCreateNew} className="create-journal-button">
-          Create New Entry
-        </button>
-        <button 
-          onClick={handleRefresh} 
-          disabled={loading || refreshing || retrying}
-          className="refresh-button"
-        >
-          {refreshing ? "Refreshing..." : "Refresh Entries"}
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="loading">Loading journals...</div>
-      ) : entries.length === 0 ? (
-        <div className="no-entries">
-          <p>No journal entries yet. Create your first one!</p>
-          {!error && (
-            <p className="entries-hint">
-              After creating an entry, you might need to click "Refresh Entries" to see it in the list.
-            </p>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="entries-count">
-            Found {entries.length} journal entries
-          </div>
-          <div className="entries-list">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="entry-item"
-                onClick={() => handleEntryClick(entry.id)}
+        {error && (
+          <Alert status="error" borderRadius="md">
+            <AlertIcon />
+            <Box flex="1">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Box>
+            <HStack spacing={2}>
+              <Button
+                colorScheme="red"
+                onClick={handleRetryWithUniqueRepo}
+                isLoading={retrying}
+                loadingText="Creating..."
+                size="sm"
               >
-                <h3>{entry.title}</h3>
-                <div className="entry-meta">
-                  <span>
-                    Created: {new Date(entry.createdAt).toLocaleDateString()}
-                  </span>
-                  <span>
-                    Updated: {new Date(entry.updatedAt).toLocaleDateString()}
-                  </span>
-                </div>
-                <p className="entry-preview">
-                  {entry.content.length > 100
-                    ? `${entry.content.substring(0, 100)}...`
-                    : entry.content}
-                </p>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+                Retry with New Repository
+              </Button>
+              <Button
+                onClick={loadEntries}
+                isLoading={loading || retrying || refreshing}
+                size="sm"
+              >
+                Retry Current Repository
+              </Button>
+            </HStack>
+          </Alert>
+        )}
+
+        <Box
+          p={4}
+          borderRadius="md"
+          bg={bgColor}
+          borderWidth={1}
+          borderColor={borderColor}
+        >
+          <VStack spacing={2} align="stretch">
+            <Text fontSize="sm" color="gray.500">
+              Current user: {currentUser?.email || "Not logged in"}
+            </Text>
+            <Text fontSize="sm" color="gray.500">
+              GitHub username: {githubUsername || "Not set"}
+            </Text>
+            <Text fontSize="sm" color="gray.500">
+              GitHub token: {githubAccessToken ? "Present" : "Missing"}
+            </Text>
+          </VStack>
+        </Box>
+
+        <HStack spacing={4}>
+          <Button colorScheme="blue" onClick={handleCreateNew} size="lg">
+            Create New Entry
+          </Button>
+          <Button
+            onClick={handleRefresh}
+            isLoading={refreshing}
+            loadingText="Refreshing..."
+            size="lg"
+          >
+            Refresh Entries
+          </Button>
+        </HStack>
+
+        {entries.length === 0 ? (
+          <Box
+            p={8}
+            textAlign="center"
+            borderRadius="md"
+            bg={bgColor}
+            borderWidth={1}
+            borderColor={borderColor}
+          >
+            <Text fontSize="lg" mb={2}>
+              No journal entries yet. Create your first one!
+            </Text>
+            {!error && (
+              <Text fontSize="sm" color="gray.500">
+                After creating an entry, you might need to click "Refresh
+                Entries" to see it in the list.
+              </Text>
+            )}
+          </Box>
+        ) : (
+          <>
+            <Text fontSize="sm" color="gray.500">
+              Found {entries.length} journal entries
+            </Text>
+            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
+              {entries.map((entry) => (
+                <Card
+                  key={entry.id}
+                  bg={cardBgColor}
+                  cursor="pointer"
+                  onClick={() => handleEntryClick(entry.id)}
+                  _hover={{ transform: "translateY(-2px)", shadow: "lg" }}
+                  transition="all 0.2s"
+                >
+                  <CardHeader>
+                    <Heading size="md">{entry.title}</Heading>
+                  </CardHeader>
+                  <CardBody>
+                    <Text noOfLines={3}>
+                      {entry.content.length > 100
+                        ? `${entry.content.substring(0, 100)}...`
+                        : entry.content}
+                    </Text>
+                  </CardBody>
+                  <Divider />
+                  <CardFooter>
+                    <VStack align="stretch" spacing={1} w="full">
+                      <Text fontSize="sm" color="gray.500">
+                        Created:{" "}
+                        {new Date(entry.createdAt).toLocaleDateString()}
+                      </Text>
+                      <Text fontSize="sm" color="gray.500">
+                        Updated:{" "}
+                        {new Date(entry.updatedAt).toLocaleDateString()}
+                      </Text>
+                    </VStack>
+                  </CardFooter>
+                </Card>
+              ))}
+            </SimpleGrid>
+          </>
+        )}
+      </VStack>
+    </Container>
   );
 }

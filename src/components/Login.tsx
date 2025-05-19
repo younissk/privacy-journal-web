@@ -1,6 +1,19 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import {
+  Box,
+  Button,
+  Container,
+  Heading,
+  Text,
+  VStack,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  useColorModeValue,
+} from "@chakra-ui/react";
 
 export default function Login() {
   const [error, setError] = useState("");
@@ -9,12 +22,17 @@ export default function Login() {
     useAuth();
   const navigate = useNavigate();
 
+  const bgColor = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
+
   // Effect to navigate to journals when GitHub auth is complete
   useEffect(() => {
     if (currentUser && githubAccessToken) {
       console.log("GitHub auth complete with data:", {
         user: currentUser?.email,
-        githubToken: githubAccessToken ? githubAccessToken.substring(0, 10) + "..." : "Missing",
+        githubToken: githubAccessToken
+          ? githubAccessToken.substring(0, 10) + "..."
+          : "Missing",
         githubUsername: githubUsername || "Not set",
       });
       // Small delay to allow GitHub service to initialize properly
@@ -30,7 +48,6 @@ export default function Login() {
       setError("");
       setLoading(true);
       await loginWithGithub();
-      // The status log will now be in the useEffect with more accurate data
     } catch (err) {
       console.error("Login error:", err);
       setError(
@@ -44,23 +61,50 @@ export default function Login() {
   }
 
   return (
-    <div className="login-container">
-      <h2>Login</h2>
-      {error && <div className="error-message">{error}</div>}
-
-      <div className="auth-status">
-        <p>Current user: {currentUser?.email || "Not logged in"}</p>
-        <p>GitHub username: {githubUsername || "Not set"}</p>
-        <p>GitHub token: {githubAccessToken ? "Present" : "Missing"}</p>
-      </div>
-
-      <button
-        onClick={handleGithubLogin}
-        disabled={loading}
-        className="github-button"
+    <Container maxW="md" py={10}>
+      <Box
+        p={8}
+        borderWidth={1}
+        borderRadius="lg"
+        boxShadow="lg"
+        bg={bgColor}
+        borderColor={borderColor}
       >
-        {loading ? "Logging in..." : "Login with GitHub"}
-      </button>
-    </div>
+        <VStack spacing={6}>
+          <Heading size="lg">Welcome to Privacy Journal</Heading>
+
+          {error && (
+            <Alert status="error" borderRadius="md">
+              <AlertIcon />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <VStack spacing={3} align="stretch" w="full">
+            <Text fontSize="sm" color="gray.500">
+              Current user: {currentUser?.email || "Not logged in"}
+            </Text>
+            <Text fontSize="sm" color="gray.500">
+              GitHub username: {githubUsername || "Not set"}
+            </Text>
+            <Text fontSize="sm" color="gray.500">
+              GitHub token: {githubAccessToken ? "Present" : "Missing"}
+            </Text>
+          </VStack>
+
+          <Button
+            variant="github"
+            onClick={handleGithubLogin}
+            isLoading={loading}
+            loadingText="Logging in..."
+            w="full"
+            size="lg"
+          >
+            Login with GitHub
+          </Button>
+        </VStack>
+      </Box>
+    </Container>
   );
 }

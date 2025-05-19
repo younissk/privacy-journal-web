@@ -1,56 +1,49 @@
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
 import { Box } from "@chakra-ui/react";
-import { AuthProvider } from "./contexts/AuthContext";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import JournalList from "./components/JournalList";
 import JournalEditor from "./components/JournalEditor";
-import ProtectedRoute from "./components/ProtectedRoute";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import Navbar from "./components/Navbar";
+
+// Wrapper component to conditionally show navbar
+function AppContent() {
+  const location = useLocation();
+  const isEditorPage = location.pathname.includes('/journal/');
+  
+  return (
+    <Box>
+      {!isEditorPage && <Navbar />}
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/journals" element={<ProtectedRoute><JournalList /></ProtectedRoute>} />
+        <Route path="/journal/:id" element={<ProtectedRoute><JournalEditor /></ProtectedRoute>} />
+      </Routes>
+    </Box>
+  );
+}
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <Box minH="100vh" bg="gray.50">
-          <Box maxW="1200px" mx="auto" px={4} py={8}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/journals"
-                element={
-                  <ProtectedRoute>
-                    <JournalList />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/journal/:id"
-                element={
-                  <ProtectedRoute>
-                    <JournalEditor />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/" element={<Navigate to="/journals" />} />
-            </Routes>
-          </Box>
-        </Box>
-      </AuthProvider>
-    </Router>
+    <AuthProvider>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </AuthProvider>
   );
+}
+
+// Protected route component
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { githubAccessToken } = useAuth();
+
+  if (!githubAccessToken) {
+    return <Login />;
+  }
+
+  return <>{children}</>;
 }
 
 export default App;
