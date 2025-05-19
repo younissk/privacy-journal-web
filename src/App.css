@@ -40,3 +40,93 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Container styles */
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Login page */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 20px;
+}
+
+.github-button {
+  background-color: #24292e;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.github-button:hover {
+  background-color: #2f363d;
+}
+
+.github-button:disabled {
+  background-color: #6e7681;
+  cursor: not-allowed;
+}
+
+/* Dashboard page */
+.dashboard-container {
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-image {
+  margin: 10px 0;
+  text-align: center;
+}
+
+.profile-image img {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #e6e6e6;
+}
+
+/* Error message */
+.error-message {
+  color: #d32f2f;
+  background-color: #ffebee;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border-left: 3px solid #d32f2f;
+  margin: 10px 0;
+}
+
+/* Logout button */
+.logout-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+  align-self: flex-start;
+}
+
+.logout-button:hover {
+  background-color: #d32f2f;
+}

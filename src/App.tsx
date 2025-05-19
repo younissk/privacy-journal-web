@@ -1,35 +1,56 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import { Box } from "@chakra-ui/react";
+import { AuthProvider } from "./contexts/AuthContext";
+import Login from "./components/Login";
+import Dashboard from "./components/Dashboard";
+import JournalList from "./components/JournalList";
+import JournalEditor from "./components/JournalEditor";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <Router>
+      <AuthProvider>
+        <Box minH="100vh" bg="gray.50">
+          <Box maxW="1200px" mx="auto" px={4} py={8}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/journals"
+                element={
+                  <ProtectedRoute>
+                    <JournalList />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/journal/:id"
+                element={
+                  <ProtectedRoute>
+                    <JournalEditor />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/" element={<Navigate to="/journals" />} />
+            </Routes>
+          </Box>
+        </Box>
+      </AuthProvider>
+    </Router>
+  );
 }
 
-export default App
+export default App;
