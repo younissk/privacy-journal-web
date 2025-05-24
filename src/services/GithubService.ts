@@ -50,6 +50,25 @@ export interface ChatSession {
   updatedAt: string;
 }
 
+export interface FlowStep {
+  id: string;
+  prompt: string;
+  description?: string;
+  type: "boolean" | "range" | "number" | "text" | "journal";
+  min?: number; // For range/number inputs
+  max?: number;
+  step?: number;
+}
+
+export interface Flow {
+  id: string;
+  title: string;
+  description?: string;
+  steps: FlowStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface OctokitError {
   status?: number;
   message?: string;
@@ -1810,6 +1829,216 @@ ${existingEntry.content}`;
         }
       }
       return sessions;
+    } catch {
+      // Folder might not exist yet
+      return local;
+    }
+  }
+
+  /****************************
+   * Flow Templates Methods *
+   ****************************/
+  private flowsFolder = "flows";
+
+  // ---- Local storage helpers for flows ----
+  private getLocalFlows(): Flow[] {
+    try {
+      const json = localStorage.getItem("journal-flows");
+      return json ? (JSON.parse(json) as Flow[]) : [];
+    } catch (err) {
+      console.error("Failed to read flows from local storage:", err);
+      return [];
+    }
+  }
+
+  private saveLocalFlows(flows: Flow[]): void {
+    try {
+      localStorage.setItem("journal-flows", JSON.stringify(flows));
+    } catch (err) {
+      console.error("Failed to save flows to local storage:", err);
+    }
+  }
+
+  private async saveFlowToGitHub(flow: Flow): Promise<void> {
+    if (!this.octokit || !this.username) return;
+    if (!this.githubAvailable) return;
+
+    try {
+      // Attempt to fetch existing SHA (for updates)
+      let sha: string | undefined;
+      try {
+        const { data } = await this.octokit.rest.repos.getContent({
+          owner: this.username,
+          repo: this.repoName,
+          path: `${this.flowsFolder}/${flow.id}.json`,
+        });
+        if ("sha" in data) {
+          sha = data.sha as string;
+        }
+      } catch {
+        /* file does not exist yet */
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${this.flowsFolder}/${flow.id}.json`,
+        message: `${sha ? "Update" : "Create"} flow template: ${flow.title}`,
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(flow, null, 2)))),
+        sha,
+      });
+    } catch (err) {
+      console.error("Failed to save flow to GitHub:", err);
+    }
+  }
+
+  /** Create a new flow template */
+  public async createFlow(title: string, description: string | undefined, steps: FlowStep[]): Promise<Flow> {
+    const now = new Date().toISOString();
+    const id = now.replace(/[:.]/g, "-");
+
+    const flow: Flow = {
+      id,
+      title,
+      description,
+      steps,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Save locally first
+    const local = this.getLocalFlows();
+    local.push(flow);
+    this.saveLocalFlows(local);
+
+    if (this.octokit && this.username) {
+      await this.verifyGitHubAccess();
+      this.githubAvailable = await this.ensureRepoExists();
+      if (this.githubAvailable) {
+        await this.saveFlowToGitHub(flow);
+      }
+    }
+
+    return flow;
+  }
+
+  /** Update existing flow */
+  public async updateFlow(flow: Flow): Promise<Flow | null> {
+    const flows = this.getLocalFlows();
+    const idx = flows.findIndex((f) => f.id === flow.id);
+    if (idx === -1) return null;
+
+    flow.updatedAt = new Date().toISOString();
+    flows[idx] = flow;
+    this.saveLocalFlows(flows);
+
+    if (this.octokit && this.username) {
+      await this.verifyGitHubAccess();
+      this.githubAvailable = await this.ensureRepoExists();
+      if (this.githubAvailable) {
+        await this.saveFlowToGitHub(flow);
+      }
+    }
+
+    return flow;
+  }
+
+  /** Delete flow */
+  public async deleteFlow(flowId: string): Promise<boolean> {
+    const flows = this.getLocalFlows();
+    const newFlows = flows.filter((f) => f.id !== flowId);
+    if (flows.length === newFlows.length) return false;
+    this.saveLocalFlows(newFlows);
+
+    if (this.octokit && this.username) {
+      await this.verifyGitHubAccess();
+      this.githubAvailable = await this.ensureRepoExists();
+      if (this.githubAvailable) {
+        try {
+          // Need SHA to delete file
+          const { data } = await this.octokit.rest.repos.getContent({
+            owner: this.username,
+            repo: this.repoName,
+            path: `${this.flowsFolder}/${flowId}.json`,
+          });
+          if (!("sha" in data)) throw new Error("Missing SHA");
+
+          await this.octokit.rest.repos.deleteFile({
+            owner: this.username,
+            repo: this.repoName,
+            path: `${this.flowsFolder}/${flowId}.json`,
+            message: `Delete flow template ${flowId}`,
+            sha: (data as { sha: string }).sha,
+          });
+        } catch (err) {
+          console.error("Failed to delete flow from GitHub:", err);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /** Get flow by id */
+  public async getFlowById(flowId: string): Promise<Flow | null> {
+    const local = this.getLocalFlows();
+    const found = local.find((f) => f.id === flowId);
+    if (found) return found;
+
+    if (!this.octokit || !this.username) return null;
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+    if (!this.githubAvailable) return null;
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${this.flowsFolder}/${flowId}.json`,
+      });
+      if (!("content" in data)) return null;
+      const decoded = decodeURIComponent(escape(atob((data.content as string).replace(/\n/g, ""))));
+      const flow = JSON.parse(decoded) as Flow;
+
+      // Cache locally
+      local.push(flow);
+      this.saveLocalFlows(local);
+      return flow;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Get all flow templates */
+  public async getAllFlows(): Promise<Flow[]> {
+    const local = this.getLocalFlows();
+    if (local.length > 0) return local;
+
+    if (!this.octokit || !this.username) return local;
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+    if (!this.githubAvailable) return local;
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: this.flowsFolder,
+      });
+
+      const flows: Flow[] = [];
+      if (Array.isArray(data)) {
+        for (const file of data) {
+          if (file.type === "file" && file.name.endsWith(".json")) {
+            const id = file.name.replace(/\.json$/, "");
+            const flow = await this.getFlowById(id);
+            if (flow) flows.push(flow);
+          }
+        }
+      }
+      return flows;
     } catch {
       // Folder might not exist yet
       return local;

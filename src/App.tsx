@@ -9,6 +9,9 @@ import Settings from "./components/Settings";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
 import Chat from "./components/Chat";
+import FlowList from "./components/FlowList";
+import FlowEditor from "./components/FlowEditor";
+import FlowRunner from "./components/FlowRunner";
 
 // Wrapper component to conditionally show navbar
 function AppContent() {
@@ -65,6 +68,38 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Chat />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flows"
+          element={
+            <ProtectedRoute>
+              <FlowList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flows/new"
+          element={
+            <ProtectedRoute>
+              <FlowEditor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flows/edit/:id"
+          element={
+            <ProtectedRoute>
+              <FlowEditor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flow/:id"
+          element={
+            <ProtectedRoute>
+              <FlowRunner />
             </ProtectedRoute>
           }
         />

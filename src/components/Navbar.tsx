@@ -81,6 +81,7 @@ export default function Navbar() {
                 <Button variant="ghost" onClick={() => navigate("/dashboard")}>
                   Dashboard
                 </Button>
+                <Button variant="ghost" onClick={() => navigate("/flows")}>Flows</Button>
                 <Button variant="ghost" onClick={() => navigate("/settings")}>
                   Settings
                 </Button>
@@ -107,6 +108,7 @@ export default function Navbar() {
                     <MenuItem onClick={() => navigate("/dashboard")}>
                       Dashboard
                     </MenuItem>
+                    <MenuItem onClick={() => navigate("/flows")}>Flows</MenuItem>
                     <MenuItem onClick={() => navigate("/settings")}>
                       Settings
                     </MenuItem>
