@@ -27,7 +27,7 @@ export default function Dashboard() {
     try {
       setError("");
       await logout();
-      navigate("/login");
+      navigate("/ ");
     } catch {
       setError("Failed to log out");
     }

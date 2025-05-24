@@ -6,6 +6,27 @@ export interface JournalEntry {
   content: string;
   createdAt: string;
   updatedAt: string;
+  folderId?: string; // Associate entries with folders
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  parentId?: string; // For nested folders
+  color?: string; // For visual organization
+}
+
+export interface Repository {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface OctokitError {
@@ -43,6 +64,93 @@ class GithubService {
         });
       }
     });
+  }
+
+  // Add method to get current repository name
+  getCurrentRepoName(): string {
+    return this.repoName;
+  }
+
+  // Add method to set current repository
+  setCurrentRepo(repoName: string) {
+    this.repoName = repoName;
+  }
+
+  // Add method to list all user repositories
+  async getUserRepositories(): Promise<Repository[]> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    try {
+      const { data: repos } =
+        await this.octokit.rest.repos.listForAuthenticatedUser({
+          per_page: 100,
+          sort: "updated",
+          direction: "desc",
+        });
+
+      return repos.map((repo) => ({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.full_name,
+        private: repo.private,
+        description: repo.description,
+        created_at: repo.created_at || new Date().toISOString(),
+        updated_at: repo.updated_at || new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.error("Error fetching user repositories:", error);
+      throw error;
+    }
+  }
+
+  // Add method to get repositories that might contain journal entries
+  async getJournalRepositories(): Promise<Repository[]> {
+    const allRepos = await this.getUserRepositories();
+
+    // Filter for repos that might contain journal entries
+    // Look for repos with "journal", "privacy", "entries" in name or description
+    const journalKeywords = ["journal", "privacy", "entries", "diary", "notes"];
+
+    return allRepos.filter((repo) => {
+      const name = repo.name.toLowerCase();
+      const description = (repo.description || "").toLowerCase();
+
+      return journalKeywords.some(
+        (keyword) => name.includes(keyword) || description.includes(keyword)
+      );
+    });
+  }
+
+  // Add method to create a new journal repository
+  async createJournalRepository(customName?: string): Promise<string> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    const timestamp = new Date().getTime();
+    const repoName =
+      customName ||
+      `privacy-journal-entries-${this.username.replace(
+        /[^a-zA-Z0-9-]/g,
+        "-"
+      )}-${timestamp}`;
+
+    try {
+      await this.octokit.rest.repos.createForAuthenticatedUser({
+        name: repoName,
+        private: true,
+        description: "Private repository for journal entries",
+        auto_init: true,
+      });
+
+      this.repoName = repoName;
+      return repoName;
+    } catch (error) {
+      console.error("Error creating journal repository:", error);
+      throw error;
+    }
   }
 
   // Add a method to verify GitHub access
@@ -211,7 +319,8 @@ class GithubService {
 
   async createJournalEntry(
     title: string,
-    content: string
+    content: string,
+    folderId?: string
   ): Promise<JournalEntry> {
     if (!this.octokit || !this.username) {
       throw new Error("GitHub service not initialized");
@@ -232,6 +341,7 @@ class GithubService {
       content,
       createdAt: now,
       updatedAt: now,
+      folderId,
     };
 
     // If GitHub is not available, use local storage
@@ -244,11 +354,13 @@ class GithubService {
     }
 
     try {
-      const fileName = `${id}.md`;
+      // Simplified: Always store in root directory, use metadata for folder tracking
+      const filePath = `${id}.md`;
+
       const frontMatter = `---
 title: ${title}
 createdAt: ${now}
-updatedAt: ${now}
+updatedAt: ${now}${folderId ? `\nfolderId: ${folderId}` : ''}
 ---
 
 ${content}`;
@@ -256,7 +368,7 @@ ${content}`;
       await this.octokit.rest.repos.createOrUpdateFileContents({
         owner: this.username,
         repo: this.repoName,
-        path: fileName,
+        path: filePath,
         message: `Create journal entry: ${title}`,
         content: btoa(unescape(encodeURIComponent(frontMatter))),
       });
@@ -292,47 +404,64 @@ ${content}`;
       `Fetching entries from repository ${this.repoName} owned by ${this.username}`
     );
     try {
+      const entries: JournalEntry[] = [];
+
+      // Simplified: Only scan root directory
       const { data } = await this.octokit.rest.repos.getContent({
         owner: this.username,
         repo: this.repoName,
         path: "",
       });
 
-      if (!Array.isArray(data)) {
-        console.log("No content array returned, repository may be empty");
-        return [];
-      }
+      if (!Array.isArray(data)) return [];
 
-      // Filter files that look like journal entries (exclude README.md and other system files)
       const mdFiles = data.filter((file) => {
-        // Skip README and other common repository files
         if (file.type !== "file" || !file.name.endsWith(".md")) return false;
         if (file.name.toLowerCase() === "readme.md") return false;
-
-        // Try to check if filename matches our timestamp-based ID pattern (optional)
-        const isLikelyJournal =
-          /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}.*\.md$/.test(file.name);
-
-        return isLikelyJournal || true; // Return true if we decide not to enforce the pattern
+        return /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}.*\.md$/.test(file.name);
       });
-
-      console.log(
-        `Found ${mdFiles.length} markdown files that might be journal entries`
-      );
-      const entries: JournalEntry[] = [];
 
       for (const file of mdFiles) {
         const fileId = file.name.replace(".md", "");
-        console.log(`Processing file: ${file.name} as entry ID: ${fileId}`);
+        console.log(`Processing file: ${file.path} as entry ID: ${fileId}`);
 
-        const content = await this.getJournalEntryById(fileId);
-        if (content) {
-          console.log(
-            `Successfully parsed ${fileId} as a journal entry with title: ${content.title}`
-          );
-          entries.push(content);
-        } else {
-          console.log(`Failed to parse ${fileId} as a journal entry`);
+        try {
+          const { data: fileData } = await this.octokit.rest.repos.getContent({
+            owner: this.username,
+            repo: this.repoName,
+            path: file.path,
+          });
+
+          if ("content" in fileData) {
+            const base64Content = fileData.content.replace(/\n/g, "");
+            const decodedContent = decodeURIComponent(escape(atob(base64Content)));
+
+            const frontMatterMatch = decodedContent.match(
+              /---\n([\s\S]*?)\n---\n\n([\s\S]*)/
+            );
+
+            if (frontMatterMatch) {
+              const [, frontMatter, entryContent] = frontMatterMatch;
+              const titleMatch = frontMatter.match(/title: (.*)/);
+              const createdAtMatch = frontMatter.match(/createdAt: (.*)/);
+              const updatedAtMatch = frontMatter.match(/updatedAt: (.*)/);
+              const folderIdMatch = frontMatter.match(/folderId: (.*)/);
+
+              const entry: JournalEntry = {
+                id: fileId,
+                title: titleMatch ? titleMatch[1] : "Untitled",
+                content: entryContent.trim(),
+                createdAt: createdAtMatch ? createdAtMatch[1] : new Date().toISOString(),
+                updatedAt: updatedAtMatch ? updatedAtMatch[1] : new Date().toISOString(),
+                folderId: folderIdMatch ? folderIdMatch[1] : undefined,
+              };
+
+              entries.push(entry);
+              console.log(`Successfully parsed ${fileId} as a journal entry with title: ${entry.title}`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing file ${file.path}:`, error);
         }
       }
 
@@ -433,75 +562,44 @@ ${entry.content}`;
         return null;
       }
 
-      const { data } = await this.octokit.rest.repos.getContent({
-        owner: this.username,
-        repo: this.repoName,
-        path: `${id}.md`,
-      });
+      // Simplified: Only look in root directory
+      try {
+        const { data } = await this.octokit.rest.repos.getContent({
+          owner: this.username,
+          repo: this.repoName,
+          path: `${id}.md`,
+        });
 
-      if ("content" in data) {
-        // Use browser-compatible base64 decoding
-        const base64Content = data.content.replace(/\n/g, "");
-        const decodedContent = decodeURIComponent(escape(atob(base64Content)));
+        if ("content" in data) {
+          const base64Content = data.content.replace(/\n/g, "");
+          const decodedContent = decodeURIComponent(escape(atob(base64Content)));
 
-        console.log(
-          `Successfully decoded content for ${id}, length: ${decodedContent.length} chars`
-        );
-
-        // Check for front matter format
-        const frontMatterMatch = decodedContent.match(
-          /---\n([\s\S]*?)\n---\n\n([\s\S]*)/
-        );
-
-        if (frontMatterMatch) {
-          const [, frontMatter, entryContent] = frontMatterMatch;
-          const titleMatch = frontMatter.match(/title: (.*)/);
-          const createdAtMatch = frontMatter.match(/createdAt: (.*)/);
-          const updatedAtMatch = frontMatter.match(/updatedAt: (.*)/);
-
-          return {
-            id,
-            title: titleMatch ? titleMatch[1] : "Untitled",
-            content: entryContent.trim(),
-            createdAt: createdAtMatch
-              ? createdAtMatch[1]
-              : new Date().toISOString(),
-            updatedAt: updatedAtMatch
-              ? updatedAtMatch[1]
-              : new Date().toISOString(),
-          };
-        } else {
-          console.log(
-            `Entry ${id} doesn't have expected front matter format, content starts with: ${decodedContent.substring(
-              0,
-              50
-            )}...`
+          const frontMatterMatch = decodedContent.match(
+            /---\n([\s\S]*?)\n---\n\n([\s\S]*)/
           );
 
-          // For files without proper front matter (like README), create an entry with default values
-          if (id.toLowerCase() === "readme") {
-            return null; // Skip README files
-          } else {
-            // Try to extract a title from first line if possible
-            const firstLine = decodedContent.split("\n")[0].trim();
-            const title = firstLine.startsWith("#")
-              ? firstLine.replace(/^#+ /, "")
-              : id;
+          if (frontMatterMatch) {
+            const [, frontMatter, entryContent] = frontMatterMatch;
+            const titleMatch = frontMatter.match(/title: (.*)/);
+            const createdAtMatch = frontMatter.match(/createdAt: (.*)/);
+            const updatedAtMatch = frontMatter.match(/updatedAt: (.*)/);
+            const folderIdMatch = frontMatter.match(/folderId: (.*)/);
 
             return {
               id,
-              title: title || id,
-              content: decodedContent.trim(),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              title: titleMatch ? titleMatch[1] : "Untitled",
+              content: entryContent.trim(),
+              createdAt: createdAtMatch ? createdAtMatch[1] : new Date().toISOString(),
+              updatedAt: updatedAtMatch ? updatedAtMatch[1] : new Date().toISOString(),
+              folderId: folderIdMatch ? folderIdMatch[1] : undefined,
             };
           }
         }
-      } else {
-        console.log(
-          `Entry ${id} doesn't have content property in the response`
-        );
+      } catch {
+        console.log(`Entry ${id} not found`);
+        return null;
       }
+
       return null;
     } catch (error) {
       console.error(`Error getting journal entry ${id}:`, error);
@@ -512,7 +610,8 @@ ${entry.content}`;
   async updateJournalEntry(
     id: string,
     title: string,
-    content: string
+    content: string,
+    folderId?: string
   ): Promise<JournalEntry | null> {
     if (!this.octokit || !this.username) {
       throw new Error("GitHub service not initialized");
@@ -539,6 +638,7 @@ ${entry.content}`;
         ...entries[entryIndex],
         title,
         content,
+        folderId,
         updatedAt: now,
       };
 
@@ -561,7 +661,7 @@ ${entry.content}`;
       const frontMatter = `---
 title: ${title}
 createdAt: ${existingEntry.createdAt}
-updatedAt: ${now}
+updatedAt: ${now}${folderId ? `\nfolderId: ${folderId}` : ""}
 ---
 
 ${content}`;
@@ -589,6 +689,7 @@ ${content}`;
         id,
         title,
         content,
+        folderId,
         createdAt: existingEntry.createdAt,
         updatedAt: now,
       };
@@ -675,6 +776,501 @@ ${content}`;
       alert(
         "Failed to save journal entries. Local storage might be full or unavailable."
       );
+    }
+  }
+
+  // Folder management methods
+  async getAllFolders(): Promise<Folder[]> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage for folders");
+      return this.getLocalFolders();
+    }
+
+    try {
+      console.log(
+        `Getting folders from repository ${this.repoName} owned by ${this.username}`
+      );
+      const { data: contents } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: "folders",
+      });
+
+      if (!Array.isArray(contents)) {
+        return [];
+      }
+
+      const folders: Folder[] = [];
+      for (const item of contents) {
+        if (item.type === "file" && item.name.endsWith(".json")) {
+          try {
+            const { data: fileData } = await this.octokit.rest.repos.getContent(
+              {
+                owner: this.username,
+                repo: this.repoName,
+                path: item.path,
+              }
+            );
+
+            if ("content" in fileData) {
+              const decodedContent = decodeURIComponent(
+                escape(atob(fileData.content))
+              );
+              const folderData = JSON.parse(decodedContent);
+              folders.push(folderData);
+            }
+          } catch (error) {
+            console.error(`Error parsing folder ${item.name}:`, error);
+          }
+        }
+      }
+
+      return folders;
+    } catch (error) {
+      console.error("Error getting folders:", error);
+      // Fallback to local storage if GitHub fails
+      return this.getLocalFolders();
+    }
+  }
+
+  async createFolder(
+    name: string,
+    description?: string,
+    parentId?: string,
+    color?: string
+  ): Promise<Folder> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    const now = new Date().toISOString();
+    const id = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const folder: Folder = {
+      id,
+      name,
+      description,
+      createdAt: now,
+      updatedAt: now,
+      parentId,
+      color,
+    };
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to create folder");
+      const folders = this.getLocalFolders();
+      folders.push(folder);
+      this.saveLocalFolders(folders);
+      return folder;
+    }
+
+    try {
+      console.log(
+        `Creating folder in repository ${this.repoName} owned by ${this.username}`
+      );
+
+      // Simplified: Only create folder metadata file, no actual directories
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${id}.json`,
+        message: `Create folder: ${name}`,
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(folder, null, 2)))),
+      });
+
+      return folder;
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      throw error;
+    }
+  }
+
+  async updateFolder(
+    id: string,
+    name: string,
+    description?: string,
+    color?: string
+  ): Promise<Folder | null> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to update folder");
+      const folders = this.getLocalFolders();
+      const folderIndex = folders.findIndex((folder) => folder.id === id);
+
+      if (folderIndex === -1) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const updatedFolder = {
+        ...folders[folderIndex],
+        name,
+        description,
+        color,
+        updatedAt: now,
+      };
+
+      folders[folderIndex] = updatedFolder;
+      this.saveLocalFolders(folders);
+      return updatedFolder;
+    }
+
+    try {
+      console.log(
+        `Updating folder ${id} in repository ${this.repoName} owned by ${this.username}`
+      );
+
+      // Get the existing folder
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${id}.json`,
+      });
+
+      if (!("content" in fileData)) {
+        throw new Error("Could not get folder content");
+      }
+
+      const decodedContent = decodeURIComponent(escape(atob(fileData.content)));
+      const existingFolder = JSON.parse(decodedContent);
+
+      const now = new Date().toISOString();
+      const updatedFolder: Folder = {
+        ...existingFolder,
+        name,
+        description,
+        color,
+        updatedAt: now,
+      };
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${id}.json`,
+        message: `Update folder: ${name}`,
+        content: btoa(
+          unescape(encodeURIComponent(JSON.stringify(updatedFolder, null, 2)))
+        ),
+        sha: fileData.sha,
+      });
+
+      return updatedFolder;
+    } catch (error) {
+      console.error(`Error updating folder ${id}:`, error);
+      return null;
+    }
+  }
+
+  async deleteFolder(id: string): Promise<boolean> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to delete folder");
+      const folders = this.getLocalFolders();
+      const filteredFolders = folders.filter((folder) => folder.id !== id);
+
+      if (filteredFolders.length === folders.length) {
+        // No folder was deleted
+        return false;
+      }
+
+      this.saveLocalFolders(filteredFolders);
+      return true;
+    }
+
+    try {
+      console.log(
+        `Deleting folder ${id} from repository ${this.repoName} owned by ${this.username}`
+      );
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${id}.json`,
+      });
+
+      if (!("sha" in fileData)) {
+        throw new Error("Could not get file SHA");
+      }
+
+      await this.octokit.rest.repos.deleteFile({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${id}.json`,
+        message: `Delete folder: ${id}`,
+        sha: fileData.sha,
+      });
+
+      return true;
+    } catch (error) {
+      console.error(`Error deleting folder ${id}:`, error);
+      return false;
+    }
+  }
+
+  async moveFolder(
+    folderId: string,
+    newParentId?: string
+  ): Promise<Folder | null> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to move folder");
+      const folders = this.getLocalFolders();
+      const folderIndex = folders.findIndex((folder) => folder.id === folderId);
+
+      if (folderIndex === -1) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const movedFolder = {
+        ...folders[folderIndex],
+        parentId: newParentId,
+        updatedAt: now,
+      };
+
+      folders[folderIndex] = movedFolder;
+      this.saveLocalFolders(folders);
+      return movedFolder;
+    }
+
+    try {
+      console.log(
+        `Moving folder ${folderId} in repository ${this.repoName} owned by ${this.username}`
+      );
+
+      // Get the existing folder
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${folderId}.json`,
+      });
+
+      if (!("content" in fileData)) {
+        throw new Error("Could not get folder content");
+      }
+
+      const decodedContent = decodeURIComponent(escape(atob(fileData.content)));
+      const existingFolder = JSON.parse(decodedContent);
+
+      const now = new Date().toISOString();
+      const movedFolder: Folder = {
+        ...existingFolder,
+        parentId: newParentId,
+        updatedAt: now,
+      };
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${folderId}.json`,
+        message: `Move folder: ${existingFolder.name}`,
+        content: btoa(
+          unescape(encodeURIComponent(JSON.stringify(movedFolder, null, 2)))
+        ),
+        sha: fileData.sha,
+      });
+
+      return movedFolder;
+    } catch (error) {
+      console.error(`Error moving folder ${folderId}:`, error);
+      return null;
+    }
+  }
+
+  async getFolderById(folderId: string): Promise<Folder | null> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to get folder");
+      const folders = this.getLocalFolders();
+      return folders.find((folder) => folder.id === folderId) || null;
+    }
+
+    try {
+      console.log(
+        `Getting folder ${folderId} from repository ${this.repoName} owned by ${this.username}`
+      );
+
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `folders/${folderId}.json`,
+      });
+
+      if (!("content" in fileData)) {
+        throw new Error("Could not get folder content");
+      }
+
+      const decodedContent = decodeURIComponent(escape(atob(fileData.content)));
+      const folderData = JSON.parse(decodedContent);
+      return folderData;
+    } catch (error) {
+      console.error(`Error getting folder ${folderId}:`, error);
+      return null;
+    }
+  }
+
+  // Local storage methods for folders
+  private getLocalFolders(): Folder[] {
+    try {
+      const foldersJson = localStorage.getItem("journal-folders");
+      if (foldersJson) {
+        return JSON.parse(foldersJson);
+      }
+    } catch (error) {
+      console.error("Error reading folders from local storage:", error);
+    }
+    return [];
+  }
+
+  private saveLocalFolders(folders: Folder[]): void {
+    try {
+      localStorage.setItem("journal-folders", JSON.stringify(folders));
+    } catch (error) {
+      console.error("Error saving folders to local storage:", error);
+      alert(
+        "Failed to save folders. Local storage might be full or unavailable."
+      );
+    }
+  }
+
+  async moveEntryToFolder(entryId: string, newFolderId?: string): Promise<JournalEntry | null> {
+    if (!this.octokit || !this.username) {
+      throw new Error("GitHub service not initialized");
+    }
+
+    // First ensure we have the correct username from GitHub
+    await this.verifyGitHubAccess();
+
+    // Make sure we have access to the repository
+    this.githubAvailable = await this.ensureRepoExists();
+
+    // If GitHub is not available, use local storage instead
+    if (!this.githubAvailable) {
+      console.log("Using local storage to move entry");
+      const entries = this.getLocalJournalEntries();
+      const entryIndex = entries.findIndex((entry) => entry.id === entryId);
+
+      if (entryIndex === -1) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const updatedEntry = {
+        ...entries[entryIndex],
+        folderId: newFolderId,
+        updatedAt: now,
+      };
+
+      entries[entryIndex] = updatedEntry;
+      this.saveLocalJournalEntries(entries);
+      return updatedEntry;
+    }
+
+    try {
+      console.log(
+        `Moving entry ${entryId} to folder ${newFolderId || 'root'} in repository ${this.repoName}`
+      );
+
+      // Get the existing entry
+      const existingEntry = await this.getJournalEntryById(entryId);
+      if (!existingEntry) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+
+      const frontMatter = `---
+title: ${existingEntry.title}
+createdAt: ${existingEntry.createdAt}
+updatedAt: ${now}${newFolderId ? `\nfolderId: ${newFolderId}` : ''}
+---
+
+${existingEntry.content}`;
+
+      const { data: fileData } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${entryId}.md`,
+      });
+
+      if (!("sha" in fileData)) {
+        throw new Error("Could not get file SHA");
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${entryId}.md`,
+        message: `Move entry to ${newFolderId ? 'folder' : 'root'}: ${existingEntry.title}`,
+        content: btoa(unescape(encodeURIComponent(frontMatter))),
+        sha: fileData.sha,
+      });
+
+      return {
+        ...existingEntry,
+        folderId: newFolderId,
+        updatedAt: now,
+      };
+    } catch (error) {
+      console.error(`Error moving entry ${entryId}:`, error);
+      return null;
     }
   }
 }

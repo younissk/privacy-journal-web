@@ -4,47 +4,33 @@ import {
   Textarea,
   Text,
   useColorModeValue,
-  VStack,
-  Select,
 } from "@chakra-ui/react";
-import VoiceRecorder from "../VoiceRecorder";
-import { useFolders } from "../../hooks/useFolders";
 
-interface JournalFormProps {
+interface SimplifiedJournalFormProps {
   title: string;
   content: string;
-  folderId?: string;
   lastSaved: Date | null;
   onTitleChange: (value: string) => void;
   onContentChange: (value: string) => void;
-  onFolderChange: (folderId: string | undefined) => void;
 }
 
-export function JournalForm({
+export function SimplifiedJournalForm({
   title,
   content,
-  folderId,
   lastSaved,
   onTitleChange,
   onContentChange,
-  onFolderChange,
-}: JournalFormProps) {
+}: SimplifiedJournalFormProps) {
   const placeholderColor = useColorModeValue("gray.400", "gray.500");
   const subtleColor = useColorModeValue("gray.500", "gray.400");
-  const { folders } = useFolders();
-
-  const handleTranscription = (text: string) => {
-    // Append the transcribed text to the current content
-    onContentChange(content ? `${content}\n\n${text}` : text);
-  };
 
   return (
     <Box
-      pt={16}
+      pt={4}
       px={{ base: 4, md: 8, lg: 16, xl: 32 }}
       maxWidth="900px"
       mx="auto"
-      height="calc(100vh - 16px)"
+      height="calc(100vh - 80px)" // Account for navbar height
       overflowY="auto"
     >
       <Input
@@ -61,27 +47,6 @@ export function JournalForm({
         spellCheck={true}
       />
 
-      <Box mb={4}>
-        <Select
-          value={folderId || ""}
-          onChange={(e) => onFolderChange(e.target.value || undefined)}
-          placeholder="Select folder (optional)"
-          size="sm"
-          maxWidth="300px"
-          variant="filled"
-        >
-          {folders.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name}
-            </option>
-          ))}
-        </Select>
-      </Box>
-
-      <VStack spacing={4} align="stretch" mb={4}>
-        <VoiceRecorder onTranscriptionComplete={handleTranscription} />
-      </VStack>
-
       <Textarea
         value={content}
         onChange={(e) => onContentChange(e.target.value)}
@@ -91,7 +56,7 @@ export function JournalForm({
         lineHeight="tall"
         resize="none"
         p={0}
-        height="calc(100vh - 300px)"
+        height="calc(100vh - 200px)"
         _focus={{ boxShadow: "none" }}
         _placeholder={{ color: placeholderColor }}
         spellCheck={true}

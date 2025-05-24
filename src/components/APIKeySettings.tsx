@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from "react";
 import {
   Box,
   VStack,
@@ -16,51 +16,28 @@ import {
   AlertDescription,
   useColorModeValue,
   Text,
-  Spinner,
-} from '@chakra-ui/react';
-import { ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
-import { openAIService } from '../services/OpenAIService';
+} from "@chakra-ui/react";
+import { ViewIcon, ViewOffIcon } from "@chakra-ui/icons";
+import Loader from "./Loader";
+import { useOpenAIKey } from "../hooks/useOpenAIKey";
 
 export default function APIKeySettings() {
-  const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
   const [isKeyValid, setIsKeyValid] = useState<boolean | null>(null);
-  const [hasStoredKey, setHasStoredKey] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
-
   const toast = useToast();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bgColor = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
 
-  // Load existing API key on component mount
-  useEffect(() => {
-    const loadApiKey = async () => {
-      try {
-        const key = await openAIService.getApiKey();
-        if (key) {
-          setApiKey(key);
-          setHasStoredKey(true);
-        }
-      } catch (error: unknown) {
-        console.error('Error loading API key:', error);
-      } finally {
-        setIsInitializing(false);
-      }
-    };
-
-    loadApiKey();
-  }, []);
+  const { apiKey, isLoading, setKey, clearKey, testKey } = useOpenAIKey();
 
   const handleToggleShow = () => setShowApiKey(!showApiKey);
 
   const handleSave = async () => {
-    if (!apiKey.trim()) {
+    if (!apiKey?.trim()) {
       toast({
-        title: 'Error',
-        description: 'API key cannot be empty',
-        status: 'error',
+        title: "Error",
+        description: "API key cannot be empty",
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
@@ -68,94 +45,77 @@ export default function APIKeySettings() {
     }
 
     try {
-      setIsLoading(true);
-      await openAIService.setApiKey(apiKey);
-      setHasStoredKey(true);
+      await setKey.mutateAsync(apiKey);
       toast({
-        title: 'Success',
-        description: 'Your OpenAI API key has been securely saved.',
-        status: 'success',
+        title: "Success",
+        description: "Your OpenAI API key has been securely saved.",
+        status: "success",
         duration: 3000,
         isClosable: true,
       });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error: unknown) {
+    } catch {
       toast({
-        title: 'Error',
-        description: 'Failed to save API key. Please try again.',
-        status: 'error',
+        title: "Error",
+        description: "Failed to save API key. Please try again.",
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleClear = async () => {
     try {
-      setIsLoading(true);
-      await openAIService.clearApiKey();
-      setApiKey('');
-      setHasStoredKey(false);
+      await clearKey.mutateAsync();
       setIsKeyValid(null);
       toast({
-        title: 'Success',
-        description: 'Your OpenAI API key has been removed.',
-        status: 'info',
+        title: "Success",
+        description: "Your OpenAI API key has been removed.",
+        status: "info",
         duration: 3000,
         isClosable: true,
       });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error: unknown) {
+    } catch {
       toast({
-        title: 'Error',
-        description: 'Failed to clear API key. Please try again.',
-        status: 'error',
+        title: "Error",
+        description: "Failed to clear API key. Please try again.",
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleTest = async () => {
+    if (!apiKey) return;
+
     try {
-      setIsTesting(true);
-      const isValid = await openAIService.testApiKey(apiKey);
+      const isValid = await testKey.mutateAsync(apiKey);
       setIsKeyValid(isValid);
       toast({
-        title: isValid ? 'API Key Valid' : 'API Key Invalid',
+        title: isValid ? "API Key Valid" : "API Key Invalid",
         description: isValid
-          ? 'Your API key is valid and working correctly.'
-          : 'The API key is invalid or does not have access to the required services.',
-        status: isValid ? 'success' : 'error',
+          ? "Your API key is valid and working correctly."
+          : "The API key is invalid or does not have access to the required services.",
+        status: isValid ? "success" : "error",
         duration: 3000,
         isClosable: true,
       });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error: unknown) {
+    } catch {
       setIsKeyValid(false);
       toast({
-        title: 'Error',
-        description: 'Failed to test API key. Please check your internet connection.',
-        status: 'error',
+        title: "Error",
+        description:
+          "Failed to test API key. Please check your internet connection.",
+        status: "error",
         duration: 3000,
         isClosable: true,
       });
-    } finally {
-      setIsTesting(false);
     }
   };
 
-  if (isInitializing) {
-    return (
-      <Box textAlign="center" py={10}>
-        <Spinner size="xl" />
-        <Text mt={4}>Loading settings...</Text>
-      </Box>
-    );
+  if (isLoading) {
+    return <Loader text="Loading settings..." />;
   }
 
   return (
@@ -175,30 +135,34 @@ export default function APIKeySettings() {
           <Box flex="1">
             <AlertTitle>Secure Storage</AlertTitle>
             <AlertDescription>
-              Your API key is encrypted and stored locally in your browser's IndexedDB. 
-              It is tied to your user account and never sent to our servers.
+              Your API key is encrypted and stored locally in your browser's
+              IndexedDB. It is tied to your user account and never sent to our
+              servers.
             </AlertDescription>
           </Box>
         </Alert>
 
-        {hasStoredKey && (
+        {apiKey && (
           <Alert status="success" borderRadius="md">
             <AlertIcon />
             <AlertTitle>API Key Set</AlertTitle>
             <AlertDescription>
-              You currently have an API key stored. You can update it or clear it below.
+              You currently have an API key stored. You can update it or clear
+              it below.
             </AlertDescription>
           </Alert>
         )}
 
         {isKeyValid !== null && (
-          <Alert status={isKeyValid ? 'success' : 'error'} borderRadius="md">
+          <Alert status={isKeyValid ? "success" : "error"} borderRadius="md">
             <AlertIcon />
-            <AlertTitle>{isKeyValid ? 'Valid API Key' : 'Invalid API Key'}</AlertTitle>
+            <AlertTitle>
+              {isKeyValid ? "Valid API Key" : "Invalid API Key"}
+            </AlertTitle>
             <AlertDescription>
               {isKeyValid
-                ? 'This API key is valid and can be used with OpenAI services.'
-                : 'This API key is invalid or does not have access to required services.'}
+                ? "This API key is valid and can be used with OpenAI services."
+                : "This API key is invalid or does not have access to required services."}
             </AlertDescription>
           </Alert>
         )}
@@ -207,9 +171,9 @@ export default function APIKeySettings() {
           <FormLabel>OpenAI API Key</FormLabel>
           <InputGroup>
             <Input
-              type={showApiKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              type={showApiKey ? "text" : "password"}
+              value={apiKey || ""}
+              onChange={(e) => setKey.mutate(e.target.value)}
               placeholder="Enter your OpenAI API key"
               pr="4.5rem"
             />
@@ -224,9 +188,9 @@ export default function APIKeySettings() {
         <Button
           colorScheme="blue"
           onClick={handleTest}
-          isLoading={isTesting}
+          isLoading={testKey.isPending}
           loadingText="Testing..."
-          isDisabled={!apiKey.trim() || isLoading}
+          isDisabled={!apiKey || setKey.isPending}
         >
           Test API Key
         </Button>
@@ -234,33 +198,33 @@ export default function APIKeySettings() {
         <Button
           colorScheme="green"
           onClick={handleSave}
-          isLoading={isLoading}
+          isLoading={setKey.isPending}
           loadingText="Saving..."
-          isDisabled={!apiKey.trim() || isTesting}
+          isDisabled={!apiKey || testKey.isPending}
         >
           Save API Key
         </Button>
 
-        {hasStoredKey && (
+        {apiKey && (
           <Button
             colorScheme="red"
             variant="outline"
             onClick={handleClear}
-            isLoading={isLoading}
+            isLoading={clearKey.isPending}
             loadingText="Clearing..."
-            isDisabled={isTesting}
+            isDisabled={testKey.isPending}
           >
             Clear API Key
           </Button>
         )}
 
         <Text fontSize="sm" color="gray.500" mt={2}>
-          Don't have an API key? You can get one from the{' '}
-          <a 
-            href="https://platform.openai.com/api-keys" 
-            target="_blank" 
+          Don't have an API key? You can get one from the{" "}
+          <a
+            href="https://platform.openai.com/api-keys"
+            target="_blank"
             rel="noopener noreferrer"
-            style={{ textDecoration: 'underline', color: 'blue' }}
+            style={{ textDecoration: "underline", color: "blue" }}
           >
             OpenAI Platform
           </a>
@@ -268,4 +232,4 @@ export default function APIKeySettings() {
       </VStack>
     </Box>
   );
-} 
+}
