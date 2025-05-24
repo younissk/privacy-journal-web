@@ -209,20 +209,9 @@ export default function FolderList({
 
   return (
     <Box p={4} bg={bgColor} borderRadius="md">
-      <HStack justify="space-between" mb={4}>
-        <Text fontSize="md" fontWeight="medium">
-          Folders
-        </Text>
-        <Button
-          size="sm"
-          leftIcon={<AddIcon />}
-          onClick={onCreateFolder}
-          colorScheme="blue"
-          variant="ghost"
-        >
-          New Folder
-        </Button>
-      </HStack>
+      <Text fontSize="md" fontWeight="medium" mb={4}>
+        Folders
+      </Text>
 
       <VStack align="stretch" spacing={2}>
         {/* All Entries Option */}
@@ -269,6 +258,19 @@ export default function FolderList({
             />
           ))
         )}
+
+        {/* New Folder Button */}
+        <Button
+          size="sm"
+          leftIcon={<AddIcon />}
+          onClick={onCreateFolder}
+          colorScheme="blue"
+          variant="ghost"
+          justifyContent="flex-start"
+          mt={2}
+        >
+          New Folder
+        </Button>
       </VStack>
     </Box>
   );

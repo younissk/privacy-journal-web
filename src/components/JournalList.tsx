@@ -38,15 +38,24 @@ export default function JournalList() {
   const [retrying, setRetrying] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const navigate = useNavigate();
-  
-  const { entries, isLoading, error, refetch, createEntry } = useJournalEntries();
+
+  const { entries, isLoading, error, refetch, createEntry } =
+    useJournalEntries();
   const { folders, isLoading: foldersLoading, deleteFolder } = useFolders();
-  const { isOpen: isCreateFolderOpen, onOpen: onCreateFolderOpen, onClose: onCreateFolderClose } = useDisclosure();
+  const {
+    isOpen: isCreateFolderOpen,
+    onOpen: onCreateFolderOpen,
+    onClose: onCreateFolderClose,
+  } = useDisclosure();
 
   const bgColor = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const cardBgColor = useColorModeValue("white", "gray.700");
   const folderBgColor = useColorModeValue("blue.50", "blue.900");
+  const shadowColor = useColorModeValue(
+    "rgba(0, 0, 0, 0.1)",
+    "rgba(0, 0, 0, 0.3)"
+  );
 
   async function handleRetryWithUniqueRepo() {
     try {
@@ -74,7 +83,11 @@ export default function JournalList() {
   }
 
   const handleDeleteFolder = async (folderId: string) => {
-    if (confirm("Are you sure you want to delete this folder? Entries in this folder will not be deleted.")) {
+    if (
+      confirm(
+        "Are you sure you want to delete this folder? Entries in this folder will not be deleted."
+      )
+    ) {
       try {
         await deleteFolder.mutateAsync(folderId);
         if (selectedFolderId === folderId) {
@@ -95,12 +108,12 @@ export default function JournalList() {
     ? entries.filter((entry) => entry.folderId === selectedFolderId)
     : entries;
 
-  const selectedFolder = selectedFolderId 
-    ? folders.find(f => f.id === selectedFolderId)
+  const selectedFolder = selectedFolderId
+    ? folders.find((f) => f.id === selectedFolderId)
     : null;
 
   // Group folders by root folders only (no nested display for simplicity)
-  const rootFolders = folders.filter(folder => !folder.parentId);
+  const rootFolders = folders.filter((folder) => !folder.parentId);
 
   const renderFolderCard = (folder: Folder) => (
     <Card
@@ -111,7 +124,9 @@ export default function JournalList() {
       cursor="pointer"
       _hover={{ borderColor: "blue.300", transform: "translateY(-1px)" }}
       transition="all 0.2s"
-      onClick={() => setSelectedFolderId(selectedFolderId === folder.id ? null : folder.id)}
+      onClick={() =>
+        setSelectedFolderId(selectedFolderId === folder.id ? null : folder.id)
+      }
     >
       <CardHeader>
         <HStack justify="space-between" align="center">
@@ -135,7 +150,7 @@ export default function JournalList() {
 
           <HStack spacing={2}>
             <Badge size="sm" colorScheme="blue">
-              {entries.filter(e => e.folderId === folder.id).length} entries
+              {entries.filter((e) => e.folderId === folder.id).length} entries
             </Badge>
             <Menu>
               <MenuButton
@@ -147,10 +162,12 @@ export default function JournalList() {
                 onClick={(e) => e.stopPropagation()}
               />
               <MenuList>
-                <MenuItem onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteFolder(folder.id);
-                }}>
+                <MenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteFolder(folder.id);
+                  }}
+                >
                   Delete Folder
                 </MenuItem>
               </MenuList>
@@ -172,10 +189,12 @@ export default function JournalList() {
     >
       <CardHeader>
         <HStack justify="space-between" align="start">
-          <Heading size="md" noOfLines={1}>{entry.title}</Heading>
+          <Heading size="md" noOfLines={1}>
+            {entry.title}
+          </Heading>
           {entry.folderId && (
             <Badge size="sm" colorScheme="blue" flexShrink={0}>
-              {folders.find(f => f.id === entry.folderId)?.name || "Unknown"}
+              {folders.find((f) => f.id === entry.folderId)?.name || "Unknown"}
             </Badge>
           )}
         </HStack>
@@ -206,25 +225,15 @@ export default function JournalList() {
       <VStack spacing={6} align="stretch">
         <HStack justify="space-between" align="center">
           <Heading size="lg">Your Journal</Heading>
-          <HStack spacing={2}>
-            <Button
-              size="md"
-              leftIcon={<AddIcon />}
-              onClick={onCreateFolderOpen}
-              variant="outline"
-              colorScheme="blue"
-            >
-              New Folder
-            </Button>
-            <Button
-              size="md"
-              leftIcon={<AddIcon />}
-              onClick={handleCreateNew}
-              colorScheme="blue"
-            >
-              New Entry
-            </Button>
-          </HStack>
+          <Button
+            size="md"
+            leftIcon={<AddIcon />}
+            onClick={onCreateFolderOpen}
+            variant="outline"
+            colorScheme="blue"
+          >
+            New Folder
+          </Button>
         </HStack>
 
         {error && (
@@ -325,7 +334,7 @@ export default function JournalList() {
           <Heading size="md">
             {selectedFolderId ? "Entries in Folder" : "All Entries"}
           </Heading>
-          
+
           {filteredEntries.length === 0 ? (
             <Box
               p={8}
@@ -353,6 +362,26 @@ export default function JournalList() {
           )}
         </VStack>
       </VStack>
+
+      {/* Floating Action Button for New Entry */}
+      <IconButton
+        aria-label="Create new entry"
+        icon={<AddIcon />}
+        size="lg"
+        colorScheme="blue"
+        isRound
+        position="fixed"
+        bottom={6}
+        right={6}
+        boxShadow={`0 4px 20px ${shadowColor}`}
+        _hover={{
+          transform: "scale(1.05)",
+          boxShadow: `0 6px 25px ${shadowColor}`,
+        }}
+        transition="all 0.2s"
+        zIndex={1000}
+        onClick={handleCreateNew}
+      />
 
       <CreateFolderModal
         isOpen={isCreateFolderOpen}
