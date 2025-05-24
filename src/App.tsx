@@ -8,6 +8,7 @@ import SearchPage from "./components/SearchPage";
 import Settings from "./components/Settings";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
+import Chat from "./components/Chat";
 
 // Wrapper component to conditionally show navbar
 function AppContent() {
@@ -56,6 +57,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <Chat />
             </ProtectedRoute>
           }
         />

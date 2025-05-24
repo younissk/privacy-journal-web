@@ -30,6 +30,26 @@ export interface Repository {
   updated_at: string;
 }
 
+export interface UserProfile {
+  name?: string;
+  bio?: string;
+  additionalInfo?: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface OctokitError {
   status?: number;
   message?: string;
@@ -1362,16 +1382,8 @@ ${existingEntry.content}`;
         if ("sha" in data) {
           sha = data.sha;
         }
-      } catch (err: unknown) {
-        // File might not exist – that's fine
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "status" in err &&
-          (err as { status?: number }).status !== 404
-        ) {
-          throw err;
-        }
+      } catch {
+        /* ignore 404 */
       }
 
       await this.octokit.rest.repos.createOrUpdateFileContents({
@@ -1513,6 +1525,295 @@ ${existingEntry.content}`;
     await this.saveVectorDB(newDb);
 
     return { processed, errors };
+  }
+
+  /****************************
+   * User Profile Methods *
+   ****************************/
+  public async getUserProfile(): Promise<UserProfile | null> {
+    // Attempt local storage first for speed
+    try {
+      const local = localStorage.getItem("journal-user-profile");
+      if (local) {
+        return JSON.parse(local) as UserProfile;
+      }
+    } catch (err) {
+      console.error("Failed to read user profile from local storage:", err);
+    }
+
+    // Fallback to GitHub
+    if (!this.octokit || !this.username) {
+      return null;
+    }
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+
+    if (!this.githubAvailable) return null;
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: "user_profile.json",
+      });
+
+      if (!("content" in data)) {
+        return null;
+      }
+
+      const decoded = decodeURIComponent(
+        escape(atob((data.content as string).replace(/\n/g, "")))
+      );
+      const profile = JSON.parse(decoded) as UserProfile;
+
+      // Cache to local storage
+      localStorage.setItem("journal-user-profile", JSON.stringify(profile));
+      return profile;
+    } catch {
+      // 404 is fine – no profile yet
+      return null;
+    }
+  }
+
+  public async saveUserProfile(profile: UserProfile): Promise<void> {
+    // Always save to local storage
+    try {
+      localStorage.setItem("journal-user-profile", JSON.stringify(profile));
+    } catch (err) {
+      console.error("Failed to save user profile locally:", err);
+    }
+
+    if (!this.octokit || !this.username) {
+      return;
+    }
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+
+    if (!this.githubAvailable) return;
+
+    try {
+      // Try to fetch existing file SHA (required for updates)
+      let sha: string | undefined;
+      try {
+        const { data } = await this.octokit.rest.repos.getContent({
+          owner: this.username,
+          repo: this.repoName,
+          path: "user_profile.json",
+        });
+        if ("sha" in data) {
+          sha = data.sha as string;
+        }
+      } catch {
+        /* ignore 404 */
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: "user_profile.json",
+        message: "Update user profile",
+        content: btoa(
+          unescape(encodeURIComponent(JSON.stringify(profile, null, 2)))
+        ),
+        sha,
+      });
+    } catch (err) {
+      console.error("Failed to save user profile to GitHub:", err);
+    }
+  }
+
+  /****************************
+   * Chat Session Methods *
+   ****************************/
+  private chatsFolder = "chats";
+
+  private getLocalChatSessions(): ChatSession[] {
+    try {
+      const json = localStorage.getItem("journal-chat-sessions");
+      return json ? (JSON.parse(json) as ChatSession[]) : [];
+    } catch (err) {
+      console.error("Failed to read chat sessions from local storage:", err);
+      return [];
+    }
+  }
+
+  private saveLocalChatSessions(sessions: ChatSession[]): void {
+    try {
+      localStorage.setItem("journal-chat-sessions", JSON.stringify(sessions));
+    } catch (err) {
+      console.error("Failed to save chat sessions to local storage:", err);
+    }
+  }
+
+  private async saveChatSessionToGitHub(session: ChatSession): Promise<void> {
+    if (!this.octokit || !this.username) return;
+    if (!this.githubAvailable) return;
+
+    try {
+      // Attempt to fetch existing SHA (required for updates)
+      let sha: string | undefined;
+      try {
+        const { data } = await this.octokit.rest.repos.getContent({
+          owner: this.username,
+          repo: this.repoName,
+          path: `${this.chatsFolder}/${session.id}.json`,
+        });
+        if ("sha" in data) {
+          sha = data.sha as string;
+        }
+      } catch {
+        /* ignore 404 */
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${this.chatsFolder}/${session.id}.json`,
+        message: `Update chat session: ${session.title}`,
+        content: btoa(
+          unescape(encodeURIComponent(JSON.stringify(session, null, 2)))
+        ),
+        sha,
+      });
+    } catch (err) {
+      console.error("Failed to save chat session to GitHub:", err);
+    }
+  }
+
+  public async createChatSession(
+    title: string,
+    firstMessage?: ChatMessage
+  ): Promise<ChatSession> {
+    const now = new Date().toISOString();
+    const id = now.replace(/[:.]/g, "-");
+    const session: ChatSession = {
+      id,
+      title,
+      messages: firstMessage ? [firstMessage] : [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Save locally immediately for responsiveness
+    const sessions = this.getLocalChatSessions();
+    sessions.push(session);
+    this.saveLocalChatSessions(sessions);
+
+    if (this.octokit && this.username) {
+      await this.verifyGitHubAccess();
+      this.githubAvailable = await this.ensureRepoExists();
+      if (this.githubAvailable) {
+        await this.saveChatSessionToGitHub(session);
+      }
+    }
+
+    return session;
+  }
+
+  public async appendMessageToSession(
+    sessionId: string,
+    message: ChatMessage
+  ): Promise<ChatSession | null> {
+    const sessions = this.getLocalChatSessions();
+    let sessionIndex = sessions.findIndex((s) => s.id === sessionId);
+
+    let session: ChatSession | null =
+      sessionIndex !== -1 ? sessions[sessionIndex] : null;
+
+    // If not found locally, try GitHub
+    if (!session) {
+      session = await this.getChatSessionById(sessionId);
+      if (!session) return null;
+      sessions.push(session);
+      sessionIndex = sessions.length - 1;
+    }
+
+    session.messages.push(message);
+    session.updatedAt = new Date().toISOString();
+    sessions[sessionIndex] = session;
+    this.saveLocalChatSessions(sessions);
+
+    if (this.octokit && this.username) {
+      await this.verifyGitHubAccess();
+      this.githubAvailable = await this.ensureRepoExists();
+      if (this.githubAvailable) {
+        await this.saveChatSessionToGitHub(session);
+      }
+    }
+
+    return session;
+  }
+
+  public async getChatSessionById(
+    sessionId: string
+  ): Promise<ChatSession | null> {
+    // Check local first
+    const localSessions = this.getLocalChatSessions();
+    const local = localSessions.find((s) => s.id === sessionId);
+    if (local) return local;
+
+    if (!this.octokit || !this.username) return null;
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+    if (!this.githubAvailable) return null;
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: `${this.chatsFolder}/${sessionId}.json`,
+      });
+      if (!("content" in data)) return null;
+
+      const decoded = decodeURIComponent(
+        escape(atob((data.content as string).replace(/\n/g, "")))
+      );
+      const session = JSON.parse(decoded) as ChatSession;
+
+      // Cache locally
+      localSessions.push(session);
+      this.saveLocalChatSessions(localSessions);
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  public async getAllChatSessions(): Promise<ChatSession[]> {
+    const local = this.getLocalChatSessions();
+    if (local.length > 0) return local;
+
+    if (!this.octokit || !this.username) return local;
+
+    await this.verifyGitHubAccess();
+    this.githubAvailable = await this.ensureRepoExists();
+    if (!this.githubAvailable) return local;
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: this.chatsFolder,
+      });
+
+      const sessions: ChatSession[] = [];
+      if (Array.isArray(data)) {
+        for (const file of data) {
+          if (file.type === "file" && file.name.endsWith(".json")) {
+            const id = file.name.replace(/\.json$/, "");
+            const session = await this.getChatSessionById(id);
+            if (session) sessions.push(session);
+          }
+        }
+      }
+      return sessions;
+    } catch {
+      // Folder might not exist yet
+      return local;
+    }
   }
 }
 

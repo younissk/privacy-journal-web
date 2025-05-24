@@ -13,6 +13,7 @@ import {
 } from '@chakra-ui/react';
 import APIKeySettings from './APIKeySettings';
 import RepositorySelector from './RepositorySelector';
+import ProfileSettings from './ProfileSettings';
 
 export default function Settings() {
   const bgColor = useColorModeValue('gray.50', 'gray.900');
@@ -30,6 +31,7 @@ export default function Settings() {
             <TabList>
               <Tab>API Keys</Tab>
               <Tab>Repository</Tab>
+              <Tab>Profile</Tab>
             </TabList>
 
             <TabPanels>
@@ -46,6 +48,9 @@ export default function Settings() {
                   </Text>
                   <RepositorySelector />
                 </VStack>
+              </TabPanel>
+              <TabPanel>
+                <ProfileSettings />
               </TabPanel>
             </TabPanels>
           </Tabs>

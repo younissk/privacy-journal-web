@@ -84,6 +84,7 @@ export default function Navbar() {
                 <Button variant="ghost" onClick={() => navigate("/settings")}>
                   Settings
                 </Button>
+                <Button variant="ghost" onClick={() => navigate("/chat")}>Chat</Button>
                 <Button variant="logout" onClick={handleLogout}>
                   Logout
                 </Button>
@@ -109,6 +110,7 @@ export default function Navbar() {
                     <MenuItem onClick={() => navigate("/settings")}>
                       Settings
                     </MenuItem>
+                    <MenuItem onClick={() => navigate("/chat")}>Chat</MenuItem>
                     <MenuItem onClick={handleLogout} color="red.500">
                       Logout
                     </MenuItem>

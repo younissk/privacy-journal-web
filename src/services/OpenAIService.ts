@@ -402,7 +402,11 @@ class OpenAIService {
         input: text,
       });
 
-      if (response && Array.isArray(response.data) && response.data.length > 0) {
+      if (
+        response &&
+        Array.isArray(response.data) &&
+        response.data.length > 0
+      ) {
         // The SDK currently types embedding as number[] | string[] so we cast to number[]
         return response.data[0].embedding as unknown as number[];
       }
@@ -411,6 +415,48 @@ class OpenAIService {
     } catch (error) {
       console.error("Error generating embedding:", error);
       return null;
+    }
+  }
+
+  /**
+   * Generate a chat completion using OpenAI Chat Completion API.
+   * @param {Array<{ role: 'system' | 'user' | 'assistant'; content: string }>} messages - The conversation messages so far.
+   * @param {string} [model='gpt-3.5-turbo'] - The chat model to use.
+   * @param {number} [temperature=0.7] - Sampling temperature.
+   * @returns {Promise<string>} The assistant response text.
+   * @throws {OpenAIServiceError} If the request fails or API key is missing.
+   */
+  public async getChatCompletion(
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+    model = "gpt-3.5-turbo",
+    temperature = 0.7
+  ): Promise<string> {
+    const isInitialized = await this.ensureOpenAIInitialized();
+
+    if (!isInitialized || !this.openai) {
+      throw new OpenAIServiceError(
+        "OpenAI API key not set. Please add your API key in settings."
+      );
+    }
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages,
+        temperature,
+      });
+
+      const text = response.choices?.[0]?.message?.content?.trim();
+      if (!text) {
+        throw new Error("No response text received from OpenAI");
+      }
+      return text;
+    } catch (error) {
+      throw new OpenAIServiceError(
+        `Error generating chat completion: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 }
