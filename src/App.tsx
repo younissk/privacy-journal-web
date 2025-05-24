@@ -4,6 +4,7 @@ import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import JournalList from "./components/JournalList";
 import JournalEditor from "./components/JournalEditor";
+import SearchPage from "./components/SearchPage";
 import Settings from "./components/Settings";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
@@ -31,6 +32,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <JournalList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchPage />
             </ProtectedRoute>
           }
         />

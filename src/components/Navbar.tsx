@@ -75,6 +75,9 @@ export default function Navbar() {
                 <Button variant="ghost" onClick={() => navigate("/journals")}>
                   Journals
                 </Button>
+                <Button variant="ghost" onClick={() => navigate("/search")}>
+                  Search
+                </Button>
                 <Button variant="ghost" onClick={() => navigate("/dashboard")}>
                   Dashboard
                 </Button>
@@ -96,6 +99,9 @@ export default function Navbar() {
                   <MenuList>
                     <MenuItem onClick={() => navigate("/journals")}>
                       Journals
+                    </MenuItem>
+                    <MenuItem onClick={() => navigate("/search")}>
+                      Search
                     </MenuItem>
                     <MenuItem onClick={() => navigate("/dashboard")}>
                       Dashboard

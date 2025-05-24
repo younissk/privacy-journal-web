@@ -1,4 +1,5 @@
 import { Octokit } from "octokit";
+import { openAIService } from "./OpenAIService";
 
 export interface JournalEntry {
   id: string;
@@ -40,6 +41,8 @@ class GithubService {
   private username: string | null = null;
   private repoName = "privacy-journal-entries";
   private githubAvailable = true; // Track if GitHub storage is available
+  // Vector database file name (stored at repo root)
+  private vectorDbFileName = "vector_db.json";
 
   constructor() {}
 
@@ -373,6 +376,13 @@ ${content}`;
         content: btoa(unescape(encodeURIComponent(frontMatter))),
       });
 
+      // Generate and store vector embedding (best-effort)
+      try {
+        await this.upsertEntryEmbedding(id, `${title}\n\n${content}`);
+      } catch (err) {
+        console.error("Failed to generate/save embedding for new entry:", err);
+      }
+
       return newEntry;
     } catch (error) {
       console.error("Error creating journal entry:", error);
@@ -685,6 +695,13 @@ ${content}`;
         sha: fileData.sha,
       });
 
+      // Update embedding
+      try {
+        await this.upsertEntryEmbedding(id, `${title}\n\n${content}`);
+      } catch (err) {
+        console.error("Failed to update embedding:", err);
+      }
+
       return {
         id,
         title,
@@ -746,6 +763,13 @@ ${content}`;
         message: `Delete journal entry: ${id}`,
         sha: fileData.sha,
       });
+
+      // Remove from vector DB
+      try {
+        await this.removeEntryEmbedding(id);
+      } catch (err) {
+        console.error("Failed to remove embedding:", err);
+      }
 
       return true;
     } catch (error) {
@@ -1272,6 +1296,223 @@ ${existingEntry.content}`;
       console.error(`Error moving entry ${entryId}:`, error);
       return null;
     }
+  }
+
+  /****************************
+   * Vector DB Helper Methods *
+   ****************************/
+
+  /**
+   * Load the vector database (mapping of entry id → embedding)
+   */
+  private async loadVectorDB(): Promise<Record<string, number[]>> {
+    // Local fallback if GitHub unavailable
+    if (!this.githubAvailable || !this.octokit || !this.username) {
+      return this.getLocalVectorDB();
+    }
+
+    try {
+      const { data } = await this.octokit.rest.repos.getContent({
+        owner: this.username,
+        repo: this.repoName,
+        path: this.vectorDbFileName,
+      });
+
+      if (!("content" in data)) {
+        throw new Error("Vector DB file has no content");
+      }
+
+      const decoded = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
+      return JSON.parse(decoded);
+    } catch (error: unknown) {
+      // If file not found (404) treat as empty
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "status" in error &&
+        (error as { status?: number }).status === 404
+      ) {
+        return {};
+      }
+      console.error("Failed to load vector DB:", error);
+      return {};
+    }
+  }
+
+  /**
+   * Persist the vector DB back to GitHub (or local storage if GitHub unavailable)
+   */
+  private async saveVectorDB(db: Record<string, number[]>): Promise<void> {
+    // Save to local storage in all cases for quick access
+    this.saveLocalVectorDB(db);
+
+    if (!this.githubAvailable || !this.octokit || !this.username) {
+      return;
+    }
+
+    try {
+      // Attempt to fetch existing SHA (required for updates)
+      let sha: string | undefined;
+      try {
+        const { data } = await this.octokit.rest.repos.getContent({
+          owner: this.username,
+          repo: this.repoName,
+          path: this.vectorDbFileName,
+        });
+        if ("sha" in data) {
+          sha = data.sha;
+        }
+      } catch (err: unknown) {
+        // File might not exist – that's fine
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "status" in err &&
+          (err as { status?: number }).status !== 404
+        ) {
+          throw err;
+        }
+      }
+
+      await this.octokit.rest.repos.createOrUpdateFileContents({
+        owner: this.username,
+        repo: this.repoName,
+        path: this.vectorDbFileName,
+        message: "Update vector database",
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(db)))),
+        sha,
+      });
+    } catch (error) {
+      console.error("Failed to save vector DB:", error);
+    }
+  }
+
+  /** Local storage helpers for vector DB */
+  private getLocalVectorDB(): Record<string, number[]> {
+    try {
+      const json = localStorage.getItem("journal-vector-db");
+      return json ? JSON.parse(json) : {};
+    } catch (err: unknown) {
+      console.error("Failed to read vector DB from local storage:", err);
+      return {};
+    }
+  }
+
+  private saveLocalVectorDB(db: Record<string, number[]>): void {
+    try {
+      localStorage.setItem("journal-vector-db", JSON.stringify(db));
+    } catch (err: unknown) {
+      console.error("Failed to save vector DB to local storage:", err);
+    }
+  }
+
+  /**
+   * Add or update the embedding for a single entry
+   */
+  private async upsertEntryEmbedding(entryId: string, text: string): Promise<void> {
+    const embedding = await openAIService.generateEmbedding(text);
+    if (!embedding) return;
+
+    const db = await this.loadVectorDB();
+    db[entryId] = embedding;
+    await this.saveVectorDB(db);
+  }
+
+  /**
+   * Remove an entry from the vector DB
+   */
+  private async removeEntryEmbedding(entryId: string): Promise<void> {
+    const db = await this.loadVectorDB();
+    if (entryId in db) {
+      delete db[entryId];
+      await this.saveVectorDB(db);
+    }
+  }
+
+  /**
+   * Compute cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    const dot = a.reduce((sum, val, idx) => sum + val * b[idx], 0);
+    const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+    const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+    if (magA === 0 || magB === 0) return 0;
+    return dot / (magA * magB);
+  }
+
+  /**
+   * Semantic search through all journal entries.
+   * Returns up to topK entries ordered by similarity (highest first).
+   */
+  public async semanticSearch(query: string, topK = 5): Promise<JournalEntry[]> {
+    // Generate embedding for query
+    const queryEmbedding = await openAIService.generateEmbedding(query);
+    if (!queryEmbedding) {
+      console.warn("Unable to generate query embedding – returning empty results");
+      return [];
+    }
+
+    const vectorDb = await this.loadVectorDB();
+    const allEntries = await this.getAllJournalEntries();
+
+    // Map entry → similarity
+    const similarities: Array<{ entry: JournalEntry; score: number }> = [];
+    for (const entry of allEntries) {
+      const emb = vectorDb[entry.id];
+      if (!emb) continue; // Skip if no embedding yet
+      const score = this.cosineSimilarity(queryEmbedding, emb);
+      similarities.push({ entry, score });
+    }
+
+    similarities.sort((a, b) => b.score - a.score);
+
+    return similarities.slice(0, topK).map((s) => s.entry);
+  }
+
+  /**
+   * Rebuild the vector database by generating embeddings for all journal entries.
+   * This can be used to index existing entries that don't have embeddings yet.
+   * @param {(processed: number, total: number) => void} onProgress - Optional progress callback
+   * @returns {Promise<{ processed: number; errors: number }>} Summary of indexing results
+   */
+  public async rebuildVectorIndex(onProgress?: (processed: number, total: number) => void): Promise<{ processed: number; errors: number }> {
+    const allEntries = await this.getAllJournalEntries();
+    let processed = 0;
+    let errors = 0;
+
+    // Load existing vector DB to avoid regenerating embeddings unnecessarily
+    const existingDb = await this.loadVectorDB();
+    const newDb: Record<string, number[]> = { ...existingDb };
+
+    for (const entry of allEntries) {
+      try {
+        // Only generate embedding if we don't already have one
+        if (!newDb[entry.id]) {
+          const embedding = await openAIService.generateEmbedding(`${entry.title}\n\n${entry.content}`);
+          if (embedding) {
+            newDb[entry.id] = embedding;
+          } else {
+            errors++;
+          }
+        }
+        processed++;
+        if (onProgress) {
+          onProgress(processed, allEntries.length);
+        }
+      } catch (err) {
+        console.error(`Failed to generate embedding for entry ${entry.id}:`, err);
+        errors++;
+        processed++;
+        if (onProgress) {
+          onProgress(processed, allEntries.length);
+        }
+      }
+    }
+
+    // Save the updated vector DB
+    await this.saveVectorDB(newDb);
+
+    return { processed, errors };
   }
 }
 

@@ -280,7 +280,7 @@ export default function FloatingVoiceRecorder({
           }}
           transition="all 0.2s"
           zIndex={1000}
-          onClick={isRecording ? stopRecording : startRecording}
+          onClick={isRecording ? undefined : startRecording}
         />
       </PopoverTrigger>
       <Portal>
@@ -308,6 +308,15 @@ export default function FloatingVoiceRecorder({
                     <Text fontSize="xs" color="gray.500" textAlign="center">
                       Speak clearly for better results
                     </Text>
+                    <Button
+                      size="sm"
+                      colorScheme="red"
+                      leftIcon={<FiMicOff />}
+                      onClick={stopRecording}
+                      width="100%"
+                    >
+                      Stop Recording
+                    </Button>
                   </VStack>
                 ) : audioBlob ? (
                   <VStack spacing={2}>

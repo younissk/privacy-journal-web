@@ -27,7 +27,7 @@ import {
   Divider,
   IconButton,
 } from "@chakra-ui/react";
-import { AddIcon, HamburgerIcon } from "@chakra-ui/icons";
+import { AddIcon, HamburgerIcon, SearchIcon } from "@chakra-ui/icons";
 import Loader from "./Loader";
 import CreateFolderModal from "./CreateFolderModal";
 import { useJournalEntries } from "../hooks/useJournalEntries";
@@ -225,15 +225,26 @@ export default function JournalList() {
       <VStack spacing={6} align="stretch">
         <HStack justify="space-between" align="center">
           <Heading size="lg">Your Journal</Heading>
-          <Button
-            size="md"
-            leftIcon={<AddIcon />}
-            onClick={onCreateFolderOpen}
-            variant="outline"
-            colorScheme="blue"
-          >
-            New Folder
-          </Button>
+          <HStack spacing={3}>
+            <Button
+              size="md"
+              leftIcon={<SearchIcon />}
+              onClick={() => navigate("/search")}
+              variant="outline"
+              colorScheme="green"
+            >
+              Search
+            </Button>
+            <Button
+              size="md"
+              leftIcon={<AddIcon />}
+              onClick={onCreateFolderOpen}
+              variant="outline"
+              colorScheme="blue"
+            >
+              New Folder
+            </Button>
+          </HStack>
         </HStack>
 
         {error && (

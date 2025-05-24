@@ -382,6 +382,37 @@ class OpenAIService {
       };
     });
   }
+
+  /**
+   * Generate an embedding vector for the given text using the OpenAI embeddings endpoint
+   * @param {string} text - The input text to embed
+   * @returns {Promise<number[] | null>} The embedding vector or null if generation fails
+   */
+  public async generateEmbedding(text: string): Promise<number[] | null> {
+    const isInitialized = await this.ensureOpenAIInitialized();
+
+    if (!isInitialized || !this.openai) {
+      console.warn("OpenAI API key is not set – cannot generate embeddings");
+      return null;
+    }
+
+    try {
+      const response = await this.openai.embeddings.create({
+        model: "text-embedding-3-small", // Lightweight embedding model
+        input: text,
+      });
+
+      if (response && Array.isArray(response.data) && response.data.length > 0) {
+        // The SDK currently types embedding as number[] | string[] so we cast to number[]
+        return response.data[0].embedding as unknown as number[];
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error generating embedding:", error);
+      return null;
+    }
+  }
 }
 
 export const openAIService = OpenAIService.getInstance();

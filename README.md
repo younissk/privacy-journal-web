@@ -7,6 +7,7 @@ A privacy focused journal app where all your journals are saved on your own priv
 - [x] GitHub login
 - [x] Private GitHub repo for each user
 - [x] Voice recording and transcription
+- [ ] Fix transcription button
 - [ ] Semantic search
 - [ ] Journal flows with prompts
 - [ ] A chatbot to talk with your journals?? idk
